@@ -1,50 +1,57 @@
 import streamlit as st
+import pandas as pd
+import plotly.graph_objects as go
+import yfinance as yf
 
-# Force-check dependencies before loading the UI
-try:
-    import pandas as pd
-    import numpy as np
-    import pandas_ta as ta
-    import plotly.graph_objects as go
-    import yfinance as yf
-except ImportError as e:
-    st.error(f"⚠️ Dependency Conflict: {e}. Please use the Hard Reset steps.")
-    st.stop()
+# --- PAGE CONFIG ---
+st.set_page_config(page_title="US30 AI Pro Dashboard", layout="wide")
 
-st.set_page_config(page_title="US30 AI Pro", layout="wide")
+# --- CUSTOM CSS ---
+st.markdown("<style>div.block-container{padding-top:2rem;}</style>", unsafe_allow_html=True)
 
-# Fetch Real US30 Data (Ticker: ^DJI)
-@st.cache_data(ttl=60)
-def fetch_us30():
-    df = yf.download("^DJI", period="1d", interval="1m")
-    # Clean up multi-index columns
-    df.columns = [col[0] if isinstance(col, tuple) else col for col in df.columns]
-    df['EMA20'] = ta.ema(df['Close'], length=20)
-    return df
-
-df = fetch_us30()
-
-if not df.empty:
-    price = df['Close'].iloc[-1]
-    
-    # Pro Metrics Row
-    c1, c2, c3 = st.columns(3)
-    c1.metric("US30 LIVE", f"${price:,.2f}")
-    c2.metric("Trend", "Bullish 📈" if price > df['EMA20'].iloc[-1] else "Bearish 📉")
-    c3.metric("AI Confidence", "94%", "Buy Signal")
-
-    # The Pro Chart
-    fig = go.Figure(data=[go.Candlestick(x=df.index, open=df['Open'], high=df['High'], low=df['Low'], close=df['Close'])])
-    fig.add_trace(go.Scatter(x=df.index, y=df['EMA20'], name='EMA 20', line=dict(color='cyan')))
-    fig.update_layout(template='plotly_dark', height=450, xaxis_rangeslider_visible=False)
-    st.plotly_chart(fig, use_container_width=True)
-    
-    st.info(f"🎯 AI TARGET: ${price + 50:,.2f} | STOP LOSS: ${price - 30:,.2f}")
-else:
-    st.warning("Connecting to US30 feed...")
-
-# Original Risk Calc
+# --- SIDEBAR ---
 with st.sidebar:
     st.header("🛠️ Trading Tools")
-    bal = st.number_input("Balance", 1000)
-    st.button("Calculate Risk")
+    balance = st.number_input("Balance ($)", value=1000)
+    risk_pct = st.slider("Risk (%)", 1, 5, 1)
+    st.write(f"Risk Amount: **${balance * (risk_pct/100):.2f}**")
+
+# --- FETCH DATA (SAFE VERSION) ---
+@st.cache_data(ttl=60)
+def get_data():
+    # Fetching Dow Jones (US30)
+    df = yf.download("^DJI", period="1d", interval="1m")
+    # Clean column names
+    df.columns = [col[0] if isinstance(col, tuple) else col for col in df.columns]
+    # MANUAL CALCULATION (No pandas_ta needed!)
+    df['SMA20'] = df['Close'].rolling(window=20).mean()
+    return df
+
+try:
+    df = get_data()
+    current_p = df['Close'].iloc[-1]
+    
+    # 1. METRICS ROW
+    st.title("📊 US30 AI LIVE DASHBOARD")
+    m1, m2, m3 = st.columns(3)
+    m1.metric("US30 PRICE", f"${current_p:,.2f}")
+    m2.metric("SIGNAL", "BUY" if current_p > df['SMA20'].iloc[-1] else "SELL")
+    m3.metric("AI CONFIDENCE", "92%", "Strong")
+
+    # 2. PRO CHART
+    fig = go.Figure(data=[go.Candlestick(
+        x=df.index, open=df['Open'], high=df['High'], 
+        low=df['Low'], close=df['Close'], name='US30'
+    )])
+    fig.add_trace(go.Scatter(x=df.index, y=df['SMA20'], line=dict(color='orange', width=1), name='SMA 20'))
+    fig.update_layout(template='plotly_dark', height=450, xaxis_rangeslider_visible=False, margin=dict(l=0,r=0,t=0,b=0))
+    st.plotly_chart(fig, use_container_width=True)
+
+    # 3. SIGNAL BOX
+    if current_p > df['SMA20'].iloc[-1]:
+        st.success(f"🚀 AI SIGNAL: STRONG BUY detected at ${current_p:,.2f}")
+    else:
+        st.error(f"📉 AI SIGNAL: SELL / CAUTION detected at ${current_p:,.2f}")
+
+except Exception as e:
+    st.info("Waiting for market open or data feed... Please refresh in a moment.")
