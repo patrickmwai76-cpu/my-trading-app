@@ -16,8 +16,8 @@ def run_ai_dashboard():
     data = yf.download(symbol, period='2d', interval=timeframe)
     
     if not data.empty:
-        last_price = data['Close'].iloc[-1]
-        st.metric("US30 Price", f"${last_price:,.2f}")
+     last_price = data['Close'].iloc[-1].item()
+st.metric("US30 Price", f"${last_price:,.2f}")
         
         # Simple AI Signal
         avg_price = data['Close'].mean()
