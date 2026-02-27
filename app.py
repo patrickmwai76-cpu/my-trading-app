@@ -1,51 +1,46 @@
 import streamlit as st
-import pandas as pd
-import numpy as np
-import plotly.graph_objects as go
-import pandas_ta as ta
-import yfinance as yf
 
-st.set_page_config(page_title="US30 AI Pro Live", layout="wide")
+# --- ERROR CHECKER ---
+try:
+    import pandas as pd
+    import numpy as np
+    import pandas_ta as ta
+    import plotly.graph_objects as go
+    import yfinance as yf
+except ImportError as e:
+    st.error(f"Missing Library: {e}")
+    st.stop()
 
-# Fetch Real US30 Data (Ticker: ^DJI)
+st.set_page_config(page_title="US30 AI Pro", layout="wide")
+
+# Sidebar Logic
+with st.sidebar:
+    st.header("🛠️ Risk Setup")
+    balance = st.number_input("Balance", 1000)
+    st.write(f"Account: ${balance:,.2f}")
+
+# Fetch Data
 @st.cache_data(ttl=60)
-def get_live_data():
-    try:
-        df = yf.download("^DJI", period="1d", interval="1m")
-        # Handle multi-index columns from yfinance
-        df.columns = [col[0] if isinstance(col, tuple) else col for col in df.columns]
-        df['SMA20'] = ta.sma(df['Close'], length=20)
-        return df
-    except Exception:
-        return pd.DataFrame()
+def load_data():
+    df = yf.download("^DJI", period="1d", interval="1m")
+    df.columns = [col[0] if isinstance(col, tuple) else col for col in df.columns]
+    df['SMA20'] = ta.sma(df['Close'], length=20)
+    return df
 
-df = get_live_data()
+data = load_data()
 
-if not df.empty:
-    current_price = df['Close'].iloc[-1]
-    
+if not data.empty:
     # Pro Metrics Row
+    current = data['Close'].iloc[-1]
     col1, col2, col3 = st.columns(3)
-    col1.metric("US30 LIVE", f"${current_price:,.2f}")
-    col2.metric("Market Trend", "Strong Bullish 📈" if current_price > df['SMA20'].iloc[-1] else "Bearish 📉")
-    col3.metric("AI Confidence", "92%", "Signal: BUY")
+    col1.metric("US30", f"${current:,.2f}")
+    col2.metric("Trend", "BULLISH" if current > data['SMA20'].iloc[-1] else "BEARISH")
+    col3.metric("AI Status", "Ready", "Optimal")
 
-    # Candlestick Chart
-    fig = go.Figure(data=[go.Candlestick(
-        x=df.index, open=df['Open'], high=df['High'], 
-        low=df['Low'], close=df['Close'], name='US30'
-    )])
-    fig.add_trace(go.Scatter(x=df.index, y=df['SMA20'], line=dict(color='orange', width=1.5), name='SMA 20'))
-    fig.update_layout(template='plotly_dark', height=450, xaxis_rangeslider_visible=False)
+    # The Pro Chart
+    fig = go.Figure(data=[go.Candlestick(x=data.index, open=data['Open'], high=data['High'], low=data['Low'], close=data['Close'])])
+    fig.add_trace(go.Scatter(x=data.index, y=data['SMA20'], name='SMA 20', line=dict(color='orange')))
+    fig.update_layout(template='plotly_dark', height=400, xaxis_rangeslider_visible=False)
     st.plotly_chart(fig, use_container_width=True)
     
-    st.success(f"🚀 AI SIGNAL: STRONG BUY detected at ${current_price:,.2f}")
-else:
-    st.warning("Connecting to US30 data feed... Please wait.")
-
-# Your original Risk Calculator in Sidebar
-with st.sidebar:
-    st.header("🛠️ Risk Manager")
-    balance = st.number_input("Balance ($)", value=1000)
-    if st.button("Calculate Setup"):
-        st.toast("Calculating...", icon="📊")
+    st.success("✅ AI Signals Active")
