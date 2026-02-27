@@ -1,43 +1,46 @@
 import streamlit as st
 import yfinance as yf
-import mplfinance as mpf
+import plotly.graph_objects as go
 
-st.set_page_config(page_title="US30 AI Pro", layout="wide")
-st.title("🤖 US30 AI Pro Dashboard")
+# 1. Setup the Page
+st.set_page_config(page_title="US30 AI Analyst", layout="wide")
+st.title("🤖 US30 AI Trading Assistant")
 
-# --- 1. RISK CALCULATOR (Sidebar) ---
-st.sidebar.header("Risk Calculator")
-balance = st.sidebar.number_input("Account Balance ($)", value=1000.0)
-risk_percent = st.sidebar.slider("Risk Per Trade (%)", 0.5, 5.0, 1.0)
-stop_loss_pips = st.sidebar.number_input("Stop Loss (Points/Pips)", value=50)
-
-# Calculate Lot Size (Simplified for US30)
-risk_amount = balance * (risk_percent / 100)
-suggested_lot = risk_amount / (stop_loss_pips * 10) # Adjust based on your broker's US30 contract
-st.sidebar.success(f"Risk Amount: ${risk_amount:.2f}")
-st.sidebar.info(f"Suggested Lot: {max(0.01, suggested_lot):.2f}")
-
-# --- 2. MARKET DATA & CHART ---
+# 2. Get the Data (US30 is ^DJI)
 df = yf.download("^DJI", period="2d", interval="15m")
 
+# 3. Process Data and Show Metrics
 if not df.empty:
-    price = df['Close'].iloc[-1].item()
-    avg_price = df['Close'].rolling(window=20).mean().iloc[-1] # 20-period Moving Average
+    # Use .item() to turn lists into single numbers for the AI to read
+    current_price = df['Close'].iloc[-1].item()
+    avg_price = df['Close'].mean().item()
     
     col1, col2 = st.columns(2)
-    col1.metric("Current US30", f"${price:,.2f}")
-    
-    # AI Signal Logic
-    if price > avg_price:
-        col2.success("AI SIGNAL: BUY (Trending Up)")
-    else:
-        col2.error("AI SIGNAL: SELL (Trending Down)")
+    with col1:
+        st.metric("US30 Live Price", f"${current_price:,.2f}")
+    with col2:
+        if current_price > avg_price:
+            st.success("AI SIGNAL: 🟢 BUY")
+        else:
+            st.error("AI SIGNAL: 🔴 SELL")
 
-    # Professional Candlestick Chart
-    st.subheader("15-Minute Candlestick Chart (with 20-MA)")
-    fig, ax = mpf.plot(df, type='candle', style='charles', 
-                       mav=(20), # Adds the Moving Average line
-                       returnfig=True, figsize=(12, 6))
-    st.pyplot(fig)
+    # 4. Professional Candlestick Chart
+    st.subheader("US30 15-Minute Candlesticks")
+    fig = go.Figure(data=[go.Candlestick(
+        x=df.index,
+        open=df['Open'],
+        high=df['High'],
+        low=df['Low'],
+        close=df['Close'],
+        name="Market Price"
+    )])
+    
+    # Add a Moving Average line (The AI's guideline)
+    df['MA'] = df['Close'].rolling(window=5).mean()
+    fig.add_trace(go.Scatter(x=df.index, y=df['MA'], line=dict(color='orange', width=2), name='Avg Price'))
+
+    fig.update_layout(xaxis_rangeslider_visible=False, height=500)
+    st.plotly_chart(fig, use_container_width=True)
+
 else:
-    st.warning("Fetching market data...")
+    st.warning("Fetching market data... If the market is closed, some data may be delayed.")
