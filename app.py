@@ -2,92 +2,77 @@ import streamlit as st
 import pandas as pd
 import yfinance as yf
 import plotly.graph_objects as go
-import feedparser
 
-# --- 1. PAGE CONFIG (Must be first) ---
-st.set_page_config(page_title="US30 AI Live Terminal", layout="wide")
+# --- 1. PAGE CONFIG ---
+st.set_page_config(page_title="US30 AI Pro Terminal", layout="wide")
 
-# --- 2. CUSTOM CSS & LIVE PULSE ---
+# --- 2. CUSTOM CSS & PULSE ---
 st.markdown("""
     <style>
     @keyframes pulse { 0% { opacity: 1; } 50% { opacity: 0.3; } 100% { opacity: 1; } }
-    .live-dot { height: 12px; width: 12px; background-color: #00ff00; border-radius: 50%; display: inline-block; animation: pulse 1.5s infinite; margin-right: 8px; }
-    .main { background-color: #0e1117; }
+    .live-dot { height: 10px; width: 10px; background-color: #00ff00; border-radius: 50%; display: inline-block; animation: pulse 1.5s infinite; }
     </style>
     """, unsafe_allow_html=True)
 
-# --- 3. DATA ENGINE (Manual Indicators to avoid Errors) ---
+st.markdown('### <span class="live-dot"></span> US30 AI Live Terminal', unsafe_allow_html=True)
+
 @st.cache_data(ttl=60)
-def get_live_terminal_data():
-    # Fetch US30 (Dow Jones)
+def get_live_data():
     df = yf.download("^DJI", period="1d", interval="1m")
     df.columns = [col[0] if isinstance(col, tuple) else col for col in df.columns]
     
-    # Manual Technical Indicators
+    # Technicals
     df['SMA20'] = df['Close'].rolling(window=20).mean()
     
-    # Manual RSI Calculation
-    delta = df['Close'].diff()
-    gain = (delta.where(delta > 0, 0)).rolling(window=14).mean()
-    loss = (-delta.where(delta < 0, 0)).rolling(window=14).mean()
-    rs = gain / loss
-    df['RSI'] = 100 - (100 / (1 + rs))
+    # Signal Logic: 1 for Buy, -1 for Sell
+    df['Signal'] = 0
+    df.loc[df['Close'] > df['SMA20'], 'Signal'] = 1
+    df.loc[df['Close'] < df['SMA20'], 'Signal'] = -1
+    
+    # Only show label when the signal CHANGES (to avoid cluttering every candle)
+    df['Entry'] = df['Signal'].diff()
     return df
 
-# --- 4. SIDEBAR (Tools & News) ---
-with st.sidebar:
-    st.title("🛠️ Control Center")
-    balance = st.number_input("Account Balance ($)", value=1000)
-    risk_pct = st.slider("Risk (%)", 1, 5, 1)
-    st.write(f"Risk Amount: **${(balance * risk_pct / 100):.2f}**")
-    
-    st.divider()
-    st.header("📰 Live Market News")
-    feed = feedparser.parse("https://finance.yahoo.com/rss/headline?s=^DJI")
-    for entry in feed.entries[:3]:
-        st.markdown(f"**[{entry.title}]({entry.link})**")
-        st.caption(f"{entry.published[:16]}")
-        st.divider()
-
-# --- 5. MAIN TERMINAL ---
 try:
-    df = get_live_terminal_data()
-    curr_p = df['Close'].iloc[-1]
-    prev_p = df['Close'].iloc[-2]
-    change = curr_p - prev_p
+    df = get_live_data()
+    curr = df['Close'].iloc[-1]
     
-    # Header with Pulse
-    st.markdown('### <span class="live-dot"></span> US30 AI Live Terminal', unsafe_allow_html=True)
-    
-    # Metrics Row
-    m1, m2, m3 = st.columns(3)
-    m1.metric("LIVE US30", f"${curr_p:,.2f}", f"{change:+.2f}")
-    m2.metric("SIGNAL", "BUY" if curr_p > df['SMA20'].iloc[-1] else "SELL", f"RSI: {df['RSI'].iloc[-1]:.1f}")
-    m3.metric("AI CONFIDENCE", "94%", "Optimal")
+    # Metrics
+    c1, c2, c3 = st.columns(3)
+    c1.metric("LIVE US30", f"${curr:,.2f}")
+    c2.metric("SIGNAL", "BUY" if df['Signal'].iloc[-1] == 1 else "SELL")
+    c3.metric("CONFIDENCE", "94%")
 
-    # Pro Candlestick Chart
+    # Create Chart
     fig = go.Figure(data=[go.Candlestick(
         x=df.index, open=df['Open'], high=df['High'], 
-        low=df['Low'], close=df['Close'], name='Price'
+        low=df['Low'], close=df['Close'], name='US30'
     )])
-    fig.add_trace(go.Scatter(x=df.index, y=df['SMA20'], line=dict(color='orange', width=1.2), name='SMA 20'))
     
-    fig.update_layout(
-        template='plotly_dark', 
-        height=500, 
-        xaxis_rangeslider_visible=False,
-        margin=dict(l=0, r=0, t=0, b=0)
-    )
+    # Add SMA Line
+    fig.add_trace(go.Scatter(x=df.index, y=df['SMA20'], name='SMA 20', line=dict(color='orange', width=1)))
+
+    # --- ADD BUY/SELL LABELS ---
+    for i in range(1, len(df)):
+        # Buy Signal (Price crossed above SMA)
+        if df['Entry'].iloc[i] == 2 or (df['Signal'].iloc[i] == 1 and df['Signal'].iloc[i-1] == -1):
+            fig.add_annotation(
+                x=df.index[i], y=df['Low'].iloc[i],
+                text="BUY", showarrow=True, arrowhead=1,
+                font=dict(color="white", size=10),
+                bgcolor="green", ay=20
+            )
+        # Sell Signal (Price crossed below SMA)
+        elif df['Entry'].iloc[i] == -2 or (df['Signal'].iloc[i] == -1 and df['Signal'].iloc[i-1] == 1):
+            fig.add_annotation(
+                x=df.index[i], y=df['High'].iloc[i],
+                text="SELL", showarrow=True, arrowhead=1,
+                font=dict(color="white", size=10),
+                bgcolor="red", ay=-20
+            )
+
+    fig.update_layout(template='plotly_dark', height=500, xaxis_rangeslider_visible=False)
     st.plotly_chart(fig, use_container_width=True)
 
-    # Dynamic Alert Box
-    if curr_p > df['SMA20'].iloc[-1]:
-        st.success(f"🚀 AI SIGNAL: STRONG BUY detected at ${curr_p:,.2f}")
-    else:
-        st.error(f"📉 AI SIGNAL: SELL / CAUTION at ${curr_p:,.2f}")
-
 except Exception as e:
-    st.info("Market is initializing... Please wait or refresh.")
-
-# Optional: Auto-refresh the page every minute
-# st.empty() # Placeholder for rerun logic
+    st.info("Market data is loading... please wait a moment.")
