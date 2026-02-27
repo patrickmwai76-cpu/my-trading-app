@@ -1,37 +1,22 @@
 import streamlit as st
 import yfinance as yf
-import mplfinance as mpf
-import pandas as pd
 
-# 1. Dashboard Logic
-def run_ai_dashboard():
-    st.set_page_config(page_title="US30 AI Analyst", layout="wide")
-    st.title("🤖 US30 AI Trading Assistant")
+# 1. Setup the Page
+st.title("US30 AI Live Feed")
+
+# 2. Get the Data
+df = yf.download("^DJI", period="1d", interval="15m")
+
+# 3. Check if we have data and show it
+if not df.empty:
+    price = df['Close'].iloc[-1].item()
+    st.metric("US30 Current Price", f"${price:,.2f}")
+    st.line_chart(df['Close'])
     
-    # Sidebar
-    symbol = st.sidebar.text_input("Ticker", "^DJI")
-    timeframe = st.sidebar.selectbox("Interval", ["5m", "15m", "1h", "1d"])
-    
-    # Load Data
-    data = yf.download(symbol, period='2d', interval=timeframe)
-    
-    if not data.empty:
-   last_price = data['Close'].iloc[-1].item()
-st.metric("US30 Price", f"${last_price:,.2f}")
-        
-        # Simple AI Signal
-        avg_price = data['Close'].mean()
-        if last_price > avg_price:
-            st.success("AI SIGNAL: BUY")
-        else:
-            st.error("AI SIGNAL: SELL")
-            
-        # Chart
-        fig, ax = mpf.plot(data, type='candle', style='charles', returnfig=True)
-        st.pyplot(fig)
+    # AI Signal Logic
+    if price > df['Close'].mean().item():
+        st.success("AI SIGNAL: BUY")
     else:
-        st.write("Fetching data... please wait.")
-
-# 2. THE START COMMAND (Crucial!)
-if __name__ == "__main__":
-    run_ai_dashboard()
+        st.error("AI SIGNAL: SELL")
+else:
+    st.write("Market is closed or data is loading...")
