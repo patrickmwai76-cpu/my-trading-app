@@ -1,57 +1,29 @@
-import streamlit as st
-import pandas as pd
-import plotly.graph_objects as go
-import yfinance as yf
+# 1. Pulse Indicator (CSS)
+st.markdown("""
+    <style>
+    @keyframes pulse {
+        0% { opacity: 1; }
+        50% { opacity: 0.3; }
+        100% { opacity: 1; }
+    }
+    .live-dot {
+        height: 10px; width: 10px;
+        background-color: #00ff00;
+        border-radius: 50%;
+        display: inline-block;
+        animation: pulse 1.5s infinite;
+    }
+    </style>
+    <h3><span class="live-dot"></span> US30 AI LIVE DASHBOARD</h3>
+    """, unsafe_allow_html=True)
 
-# --- PAGE CONFIG ---
-st.set_page_config(page_title="US30 AI Pro Dashboard", layout="wide")
+# 2. Add RSI Calculation (Safe Version)
+delta = df['Close'].diff()
+gain = (delta.where(delta > 0, 0)).rolling(window=14).mean()
+loss = (-delta.where(delta < 0, 0)).rolling(window=14).mean()
+rs = gain / loss
+df['RSI'] = 100 - (100 / (1 + rs))
 
-# --- CUSTOM CSS ---
-st.markdown("<style>div.block-container{padding-top:2rem;}</style>", unsafe_allow_html=True)
-
-# --- SIDEBAR ---
-with st.sidebar:
-    st.header("🛠️ Trading Tools")
-    balance = st.number_input("Balance ($)", value=1000)
-    risk_pct = st.slider("Risk (%)", 1, 5, 1)
-    st.write(f"Risk Amount: **${balance * (risk_pct/100):.2f}**")
-
-# --- FETCH DATA (SAFE VERSION) ---
-@st.cache_data(ttl=60)
-def get_data():
-    # Fetching Dow Jones (US30)
-    df = yf.download("^DJI", period="1d", interval="1m")
-    # Clean column names
-    df.columns = [col[0] if isinstance(col, tuple) else col for col in df.columns]
-    # MANUAL CALCULATION (No pandas_ta needed!)
-    df['SMA20'] = df['Close'].rolling(window=20).mean()
-    return df
-
-try:
-    df = get_data()
-    current_p = df['Close'].iloc[-1]
-    
-    # 1. METRICS ROW
-    st.title("📊 US30 AI LIVE DASHBOARD")
-    m1, m2, m3 = st.columns(3)
-    m1.metric("US30 PRICE", f"${current_p:,.2f}")
-    m2.metric("SIGNAL", "BUY" if current_p > df['SMA20'].iloc[-1] else "SELL")
-    m3.metric("AI CONFIDENCE", "92%", "Strong")
-
-    # 2. PRO CHART
-    fig = go.Figure(data=[go.Candlestick(
-        x=df.index, open=df['Open'], high=df['High'], 
-        low=df['Low'], close=df['Close'], name='US30'
-    )])
-    fig.add_trace(go.Scatter(x=df.index, y=df['SMA20'], line=dict(color='orange', width=1), name='SMA 20'))
-    fig.update_layout(template='plotly_dark', height=450, xaxis_rangeslider_visible=False, margin=dict(l=0,r=0,t=0,b=0))
-    st.plotly_chart(fig, use_container_width=True)
-
-    # 3. SIGNAL BOX
-    if current_p > df['SMA20'].iloc[-1]:
-        st.success(f"🚀 AI SIGNAL: STRONG BUY detected at ${current_p:,.2f}")
-    else:
-        st.error(f"📉 AI SIGNAL: SELL / CAUTION detected at ${current_p:,.2f}")
-
-except Exception as e:
-    st.info("Waiting for market open or data feed... Please refresh in a moment.")
+# 3. Display RSI in a metric
+current_rsi = df['RSI'].iloc[-1]
+st.sidebar.metric("RSI (14)", f"{current_rsi:,.2f}", "Overbought" if current_rsi > 70 else "Oversold" if current_rsi < 30 else "Neutral")
