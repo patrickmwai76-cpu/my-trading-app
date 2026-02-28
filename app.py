@@ -43,53 +43,54 @@ def get_main_data():
     df = yf.download("^DJI", period="1d", interval="1m", progress=False)
     df.columns = [col[0] if isinstance(col, tuple) else col for col in df.columns]
     df['SMA20'] = df['Close'].rolling(window=20).mean()
-    # Trend for Signals
-    df['Trend'] = 0
-    df.loc[df['Close'] > df['SMA20'], 'Trend'] = 1
-    df.loc[df['Close'] < df['SMA20'], 'Trend'] = -1
-    df['Entry'] = df['Trend'].diff()
+    # RSI Calculation
+    delta = df['Close'].diff()
+    gain = (delta.where(delta > 0, 0)).rolling(window=14).mean()
+    loss = (-delta.where(delta < 0, 0)).rolling(window=14).mean()
+    df['RSI'] = 100 - (100 / (1 + (gain / loss)))
+    # TP/SL Calculation
+    last_p = df['Close'].iloc[-1]
+    is_buy = last_p > df['SMA20'].iloc[-1]
+    df['TP'] = last_p + 45 if is_buy else last_p - 45
+    df['SL'] = last_p - 22 if is_buy else last_p + 22
     return df
 
+# --- 3. UI EXECUTION ---
 t1, t5, t15 = get_mtf_trend("^DJI", "1m"), get_mtf_trend("^DJI", "5m"), get_mtf_trend("^DJI", "15m")
+df = get_main_data()
+sig = "BUY" if df['Close'].iloc[-1] > df['SMA20'].iloc[-1] else "SELL"
+sig_c = "#00ff00" if sig == "BUY" else "#ff4b4b"
 
-# --- 3. UI: NEWS GUARD ---
-st.markdown("<h3 style='color:#00ff00;'>🛡️ NEWS GUARD</h3>", unsafe_allow_html=True)
-c_news = st.columns(2)
-c_news[0].info("**Mon Mar 2 @ 10:00 AM**\n\nISM PMI (High Volatility)")
-c_news[1].info("**Fri Mar 6 @ 08:30 AM**\n\nNFP Jobs (Critical)")
-
-st.divider()
-
-# --- 4. SIDEBAR ---
+# SIDEBAR: TREND MATRIX
 with st.sidebar:
     st.markdown("<h2 style='color:#00ff00;'>📊 TREND MATRIX</h2>", unsafe_allow_html=True)
     for label, val in [("1 MIN", t1), ("5 MIN", t5), ("15 MIN", t15)]:
-        col_c = "#00ff00" if val == "UP" else "#ff4b4b"
-        st.markdown(f"<div style='border:1px solid {col_c}; padding:10px; border-radius:5px; margin-bottom:5px; color:{col_c};'><b>{label}: {val}</b></div>", unsafe_allow_html=True)
-    st.divider()
-    if st.button("🔄 REFRESH"): st.rerun()
+        c = "#00ff00" if val == "UP" else "#ff4b4b"
+        st.markdown(f"<div style='border:1px solid {c}; padding:10px; border-radius:5px; margin-bottom:5px;'><h4 style='margin:0; color:{c};'>{label}: {val}</h4></div>", unsafe_allow_html=True)
+    st.button("🔄 REFRESH AI", on_click=st.cache_data.clear)
 
-# --- 5. CHART ENGINE ---
-df = get_main_data()
-curr_p = df['Close'].iloc[-1]
+# --- 4. THE RESTORED COMMAND HEADER ---
+st.markdown(f"<h1 style='text-align:center; color:{sig_c}; margin-bottom:0;'>LIVE {sig} SIGNAL</h1>", unsafe_allow_html=True)
 
-# Setup Subplots (Price Top, Volume Bottom)
-fig = make_subplots(rows=2, cols=1, shared_xaxes=True, vertical_spacing=0.03, row_heights=[0.8, 0.2])
+# These are the specific metrics you requested
+col1, col2, col3, col4 = st.columns(4)
+col1.metric("US30 PRICE", f"${df['Close'].iloc[-1]:,.2f}")
+col2.metric("RSI (14)", f"{df['RSI'].iloc[-1]:.2f}")
+col3.metric("TAKE PROFIT", f"${df['TP'].iloc[-1]:,.2f}")
+col4.metric("STOP LOSS", f"${df['SL'].iloc[-1]:,.2f}")
 
-# Traces
-fig.add_trace(go.Candlestick(x=df.index, open=df['Open'], high=df['High'], low=df['Low'], close=df['Close'], name='Price'), row=1, col=1)
-fig.add_trace(go.Scatter(x=df.index, y=df['SMA20'], name='Trend', line=dict(color='orange', width=2)), row=1, col=1)
+st.divider()
 
-# FORCE VOLUME BARS
-v_colors = ['green' if df['Close'].iloc[i] > df['Open'].iloc[i] else 'red' for i in range(len(df))]
-fig.add_trace(go.Bar(x=df.index, y=df['Volume'], marker_color=v_colors, name='Volume'), row=2, col=1)
+# --- 5. THE CHART ---
+fig = make_subplots(rows=2, cols=1, shared_xaxes=True, row_heights=[0.7, 0.3], vertical_spacing=0.05)
+fig.add_trace(go.Candlestick(x=df.index, open=df['Open'], high=df['High'], low=df['Low'], close=df['Close'], name='US30'), row=1, col=1)
+fig.add_trace(go.Scatter(x=df.index, y=df['SMA20'], name='EMA 20', line=dict(color='orange', width=2)), row=1, col=1)
 
-# FORCE SIGNALS ONTO CANDLES
-for i in range(len(df)):
-    if df['Entry'].iloc[i] == 2: # BUY
-        fig.add_annotation(x=df.index[i], y=df['Low'].iloc[i], text="BUY", font=dict(color="white", size=12), bgcolor="green", showarrow=True, arrowhead=1, ax=0, ay=25, row=1, col=1)
-    elif df['Entry'].iloc[i] == -2: # SELL
-        fig.add_annotation(x=df.index[i], y=df['High'].iloc[i], text="SELL", font=dict(color="white", size=12), bgcolor="red", showarrow=True, arrowhead=1, ax=0, ay=-25, row=1, col=1)
+# Visual Targets on Chart
+fig.add_hline(y=df['TP'].iloc[-1], line_dash="dash", line_color="green", annotation_text="TP", row=1, col=1)
+fig.add_hline(y=df['SL'].iloc[-1], line_dash="dash", line_color="red", annotation_text="SL", row=1, col=1)
 
-fig.update_layout(template='plotly_dark', height=800, xaxis_rangeslider_visible=False)
+# RSI Subplot
+fig.add_trace(go.Scatter(x=df.index, y=df['RSI'], name='RSI', line=dict(color='purple')), row=2, col=1)
+fig.update_layout(template='plotly_dark', height=750, xaxis_rangeslider_visible=False, showlegend=False)
 st.plotly_chart(fig, use_container_width=True)
