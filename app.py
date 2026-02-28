@@ -43,27 +43,20 @@ def get_main_data():
     df = yf.download("^DJI", period="1d", interval="1m", progress=False)
     df.columns = [col[0] if isinstance(col, tuple) else col for col in df.columns]
     df['SMA20'] = df['Close'].rolling(window=20).mean()
-    # RSI
-    delta = df['Close'].diff()
-    gain = (delta.where(delta > 0, 0)).rolling(window=14).mean()
-    loss = (-delta.where(delta < 0, 0)).rolling(window=14).mean()
-    df['RSI'] = 100 - (100 / (1 + (gain / loss)))
+    # Trend for Signals
+    df['Trend'] = 0
+    df.loc[df['Close'] > df['SMA20'], 'Trend'] = 1
+    df.loc[df['Close'] < df['SMA20'], 'Trend'] = -1
+    df['Entry'] = df['Trend'].diff()
     return df
 
-# PRE-LOAD FOR MATRIX
 t1, t5, t15 = get_mtf_trend("^DJI", "1m"), get_mtf_trend("^DJI", "5m"), get_mtf_trend("^DJI", "15m")
 
 # --- 3. UI: NEWS GUARD ---
-news_alerts = [
-    {"Day": "Mon Mar 2", "Time": "10:00 AM", "Event": "ISM PMI", "Lvl": "🔥 HIGH"},
-    {"Day": "Fri Mar 6", "Time": "08:30 AM", "Event": "NFP Jobs", "Lvl": "💣 CRITICAL"}
-]
-
-with st.container():
-    st.markdown("<h3 style='color:#00ff00;'>🛡️ NEWS GUARD</h3>", unsafe_allow_html=True)
-    nc = st.columns(len(news_alerts))
-    for i, n in enumerate(news_alerts):
-        nc[i].info(f"**{n['Day']} @ {n['Time']}**\n\n{n['Event']}")
+st.markdown("<h3 style='color:#00ff00;'>🛡️ NEWS GUARD</h3>", unsafe_allow_html=True)
+c_news = st.columns(2)
+c_news[0].info("**Mon Mar 2 @ 10:00 AM**\n\nISM PMI (High Volatility)")
+c_news[1].info("**Fri Mar 6 @ 08:30 AM**\n\nNFP Jobs (Critical)")
 
 st.divider()
 
@@ -71,41 +64,32 @@ st.divider()
 with st.sidebar:
     st.markdown("<h2 style='color:#00ff00;'>📊 TREND MATRIX</h2>", unsafe_allow_html=True)
     for label, val in [("1 MIN", t1), ("5 MIN", t5), ("15 MIN", t15)]:
-        c = "#00ff00" if val == "UP" else "#ff4b4b"
-        st.markdown(f"<div style='border:1px solid {c}; padding:10px; border-radius:5px; margin-bottom:5px;'><p style='margin:0; font-size:10px;'>{label}</p><h4 style='margin:0; color:{c};'>{val}</h4></div>", unsafe_allow_html=True)
-    
+        col_c = "#00ff00" if val == "UP" else "#ff4b4b"
+        st.markdown(f"<div style='border:1px solid {col_c}; padding:10px; border-radius:5px; margin-bottom:5px; color:{col_c};'><b>{label}: {val}</b></div>", unsafe_allow_html=True)
     st.divider()
-    if st.button("🔄 REFRESH SYSTEM"):
-        st.cache_data.clear()
-        st.rerun()
-    bal = st.number_input("Balance ($)", value=1000)
-    risk = st.slider("Risk (%)", 0.5, 5.0, 1.0)
-    st.error(f"Risk: ${bal * (risk/100):.2f}")
+    if st.button("🔄 REFRESH"): st.rerun()
 
-# --- 5. MAIN CONTENT ---
+# --- 5. CHART ENGINE ---
 df = get_main_data()
-sig = "BUY" if df['Close'].iloc[-1] > df['SMA20'].iloc[-1] else "SELL"
-sig_c = "#00ff00" if sig == "BUY" else "#ff4b4b"
+curr_p = df['Close'].iloc[-1]
 
-# WEEKEND STATUS
-st.markdown(f"<h1 style='text-align:center; color:#00ff00;'>🛡️ WEEKEND SESSION</h1>", unsafe_allow_html=True)
-st.markdown(f"<p style='text-align:center;'>Market Closed | NY Time: {datetime.now(pytz.timezone('US/Eastern')).strftime('%H:%M')}</p>", unsafe_allow_html=True)
+# Setup Subplots (Price Top, Volume Bottom)
+fig = make_subplots(rows=2, cols=1, shared_xaxes=True, vertical_spacing=0.03, row_heights=[0.8, 0.2])
 
-m1, m2, m3 = st.columns(3)
-m1.metric("US30 PRICE", f"${df['Close'].iloc[-1]:,.2f}")
-m2.metric("AI SIGNAL", sig)
-m3.metric("RSI (14)", f"{df['RSI'].iloc[-1]:.2f}")
+# Traces
+fig.add_trace(go.Candlestick(x=df.index, open=df['Open'], high=df['High'], low=df['Low'], close=df['Close'], name='Price'), row=1, col=1)
+fig.add_trace(go.Scatter(x=df.index, y=df['SMA20'], name='Trend', line=dict(color='orange', width=2)), row=1, col=1)
 
-# CHART WITH VOLUME
-fig = make_subplots(rows=3, cols=1, shared_xaxes=True, vertical_spacing=0.02, row_heights=[0.6, 0.2, 0.2])
-# Main Candles
-fig.add_trace(go.Candlestick(x=df.index, open=df['Open'], high=df['High'], low=df['Low'], close=df['Close'], name='US30'), row=1, col=1)
-fig.add_trace(go.Scatter(x=df.index, y=df['SMA20'], name='EMA 20', line=dict(color='orange')), row=1, col=1)
-# Volume
-colors = ['green' if df['Close'].iloc[i] > df['Open'].iloc[i] else 'red' for i in range(len(df))]
-fig.add_trace(go.Bar(x=df.index, y=df['Volume'], name='Volume', marker_color=colors), row=2, col=1)
-# RSI
-fig.add_trace(go.Scatter(x=df.index, y=df['RSI'], name='RSI', line=dict(color='purple')), row=3, col=1)
+# FORCE VOLUME BARS
+v_colors = ['green' if df['Close'].iloc[i] > df['Open'].iloc[i] else 'red' for i in range(len(df))]
+fig.add_trace(go.Bar(x=df.index, y=df['Volume'], marker_color=v_colors, name='Volume'), row=2, col=1)
 
-fig.update_layout(template='plotly_dark', height=850, xaxis_rangeslider_visible=False, showlegend=False)
+# FORCE SIGNALS ONTO CANDLES
+for i in range(len(df)):
+    if df['Entry'].iloc[i] == 2: # BUY
+        fig.add_annotation(x=df.index[i], y=df['Low'].iloc[i], text="BUY", font=dict(color="white", size=12), bgcolor="green", showarrow=True, arrowhead=1, ax=0, ay=25, row=1, col=1)
+    elif df['Entry'].iloc[i] == -2: # SELL
+        fig.add_annotation(x=df.index[i], y=df['High'].iloc[i], text="SELL", font=dict(color="white", size=12), bgcolor="red", showarrow=True, arrowhead=1, ax=0, ay=-25, row=1, col=1)
+
+fig.update_layout(template='plotly_dark', height=800, xaxis_rangeslider_visible=False)
 st.plotly_chart(fig, use_container_width=True)
