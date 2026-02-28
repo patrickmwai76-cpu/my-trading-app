@@ -13,8 +13,8 @@ def check_password():
         if (st.session_state["username"] == st.secrets["username"] and 
             hmac.compare_digest(st.session_state["password"], st.secrets["password"])):
             st.session_state["password_correct"] = True
-            del st.session_state["username"]
             del st.session_state["password"]
+            del st.session_state["username"]
         else: st.session_state["password_correct"] = False
     if st.session_state.get("password_correct", False): return True
     st.markdown('<h1 style="color:#00ff00; text-align:center;">🛡️ PATRO AI PRO</h1>', unsafe_allow_html=True)
@@ -43,70 +43,53 @@ def get_main_data():
     df = yf.download("^DJI", period="1d", interval="1m", progress=False)
     df.columns = [col[0] if isinstance(col, tuple) else col for col in df.columns]
     df['SMA20'] = df['Close'].rolling(window=20).mean()
-    # RSI
     delta = df['Close'].diff()
     gain = (delta.where(delta > 0, 0)).rolling(window=14).mean()
     loss = (-delta.where(delta < 0, 0)).rolling(window=14).mean()
     df['RSI'] = 100 - (100 / (1 + (gain / loss)))
-    # Targets
-    last_p = df['Close'].iloc[-1]
-    is_buy = last_p > df['SMA20'].iloc[-1]
-    df['TP'] = last_p + 40 if is_buy else last_p - 40
-    df['SL'] = last_p - 20 if is_buy else last_p + 20
-    # Signal Logic for Plotting
-    df['Signal'] = 0
-    df.loc[df['Close'] > df['SMA20'], 'Signal'] = 1
-    df.loc[df['Close'] < df['SMA20'], 'Signal'] = -1
-    df['Entry'] = df['Signal'].diff()
     return df
 
 # PRE-LOAD
 t1, t5, t15 = get_mtf_trend("^DJI", "1m"), get_mtf_trend("^DJI", "5m"), get_mtf_trend("^DJI", "15m")
 df = get_main_data()
-sig = "BUY" if df['Close'].iloc[-1] > df['SMA20'].iloc[-1] else "SELL"
-sig_c = "#00ff00" if sig == "BUY" else "#ff4b4b"
 
-# --- 3. SIDEBAR: TREND MATRIX ---
+# --- 3. SIDEBAR ---
 with st.sidebar:
     st.markdown("<h2 style='color:#00ff00;'>📊 TREND MATRIX</h2>", unsafe_allow_html=True)
     for label, val in [("1 MIN", t1), ("5 MIN", t5), ("15 MIN", t15)]:
         c = "#00ff00" if val == "UP" else "#ff4b4b"
         st.markdown(f"<div style='border:1px solid {c}; padding:10px; border-radius:5px; margin-bottom:5px;'><h4 style='margin:0; color:{c};'>{label}: {val}</h4></div>", unsafe_allow_html=True)
     st.divider()
-    if st.button("🔄 REFRESH AI"): 
+    if st.button("🔄 REFRESH SYSTEM"): 
         st.cache_data.clear()
         st.rerun()
 
 # --- 4. MAIN LAYOUT ---
-# NEWS GUARD & WEEKEND SESSION
 st.markdown("<h3 style='color:#00ff00;'>🛡️ NEWS GUARD</h3>", unsafe_allow_html=True)
 n1, n2 = st.columns(2)
-n1.info("**Mon Mar 2 @ 10:00 AM**\n\nISM PMI (High Volatility)")
-n2.info("**Fri Mar 6 @ 08:30 AM**\n\nNFP Jobs (Critical)")
+n1.info("**Mon Mar 2** | ISM PMI (10:00 AM)")
+n2.info("**Fri Mar 6** | NFP Jobs (08:30 AM)")
 
-st.markdown(f"<h1 style='text-align:center; color:#00ff00;'>🛡️ WEEKEND SESSION</h1>", unsafe_allow_html=True)
-st.markdown(f"<p style='text-align:center;'>Market Closed | NY Time: {datetime.now(pytz.timezone('US/Eastern')).strftime('%H:%M')}</p>", unsafe_allow_html=True)
+sig = "BUY" if df['Close'].iloc[-1] > df['SMA20'].iloc[-1] else "SELL"
+sig_c = "#00ff00" if sig == "BUY" else "#ff4b4b"
 
-st.divider()
+st.markdown(f"<h1 style='text-align:center; color:{sig_c};'>LIVE SIGNAL: {sig}</h1>", unsafe_allow_html=True)
 
-# THE RESTORED METRICS (LIVE SIGNAL, RSI, TARGETS)
-st.markdown(f"<h1 style='text-align:center; color:{sig_c};'>LIVE {sig} SIGNAL</h1>", unsafe_allow_html=True)
-m1, m2, m3, m4 = st.columns(4)
-m1.metric("PRICE", f"${df['Close'].iloc[-1]:,.2f}")
+m1, m2, m3 = st.columns(3)
+m1.metric("US30 PRICE", f"${df['Close'].iloc[-1]:,.2f}")
 m2.metric("RSI (14)", f"{df['RSI'].iloc[-1]:.2f}")
-m3.metric("TAKE PROFIT", f"${df['TP'].iloc[-1]:,.2f}")
-m4.metric("STOP LOSS", f"${df['SL'].iloc[-1]:,.2f}")
+m3.metric("TIME (NY)", datetime.now(pytz.timezone('US/Eastern')).strftime('%H:%M'))
 
-# --- 5. THE CHART WITH CANDLE SIGNALS ---
+# --- 5. CHART ---
 fig = make_subplots(rows=2, cols=1, shared_xaxes=True, row_heights=[0.7, 0.3], vertical_spacing=0.05)
-# Price Candles
+# Price & EMA
 fig.add_trace(go.Candlestick(x=df.index, open=df['Open'], high=df['High'], low=df['Low'], close=df['Close'], name='US30'), row=1, col=1)
 fig.add_trace(go.Scatter(x=df.index, y=df['SMA20'], name='EMA 20', line=dict(color='orange', width=2)), row=1, col=1)
 
-# ADDING BUY/SELL MARKERS ON CANDLES
-# Buy Markers
-buys = df[df['Entry'] == 2]
-fig.add_trace(go.Scatter(x=buys.index, y=buys['Low'] * 0.999, mode='markers+text', text="BUY", textposition="bottom center", marker=dict(color='#00ff00', size=10, symbol='triangle-up'), name='Buy Signal'), row=1, col=1)
-# Sell Markers
-sells = df[df['Entry'] == -2]
-fig.add_trace(go.Scatter(x=sells.index, y=sells['High'] * 1.001, mode='markers+text', text="SELL", textposition="top center", marker=dict(color='#ff4
+# RSI Subplot
+fig.add_trace(go.Scatter(x=df.index, y=df['RSI'], name='RSI', line=dict(color='purple')), row=2, col=1)
+fig.add_hline(y=70, line_dash="dot", line_color="red", row=2, col=1)
+fig.add_hline(y=30, line_dash="dot", line_color="green", row=2, col=1)
+
+fig.update_layout(template='plotly_dark', height=750, xaxis_rangeslider_visible=False, showlegend=False)
+st.plotly_chart(fig, use_container_width=True)
