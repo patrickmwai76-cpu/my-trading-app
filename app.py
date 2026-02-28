@@ -7,7 +7,7 @@ import hmac
 from datetime import datetime
 import pytz
 
-# --- 1. SECURITY ---
+# --- 1. SECURITY & CONFIG ---
 def check_password():
     def credentials_entered():
         if (st.session_state["username"] == st.secrets["username"] and 
@@ -28,35 +28,23 @@ def check_password():
 st.set_page_config(page_title="PATRO AI PRO", layout="wide")
 if not check_password(): st.stop()
 
-# --- 2. THE NEWS GUARD DATA ---
-# This is a manual alert list for the upcoming high-impact week
-news_events = [
-    {"Time": "Mon 10:00 AM", "Event": "ISM Manufacturing PMI", "Impact": "🔥 HIGH"},
-    {"Time": "Tue 10:00 AM", "Event": "Fed Williams Speech", "Impact": "Medium"},
-    {"Time": "Wed 08:15 AM", "Event": "ADP Employment Change", "Impact": "🔥 HIGH"},
-    {"Time": "Fri 08:30 AM", "Event": "Non-Farm Payrolls (NFP)", "Impact": "🔥🔥 CRITICAL"}
+# --- 2. MARKET STATUS & NEWS GUARD ---
+def get_market_status():
+    ny_tz = pytz.timezone('US/Eastern')
+    ny_now = datetime.now(ny_tz)
+    if ny_now.weekday() >= 5: return "🔴 MARKET CLOSED (WEEKEND)", "#ff4b4b"
+    if ny_now.hour < 9 or (ny_now.hour == 9 and ny_now.minute < 30) or ny_now.hour >= 16:
+        return "🟠 MARKET CLOSED (AFTER HOURS)", "#ffa500"
+    return "🟢 MARKET LIVE (NEW YORK)", "#00ff00"
+
+# MARCH 2026 HIGH-IMPACT CALENDAR
+news_alerts = [
+    {"Day": "Mon Mar 2", "Time": "10:00 AM", "Event": "ISM Manufacturing PMI", "Level": "🔥 HIGH"},
+    {"Day": "Wed Mar 4", "Time": "08:15 AM", "Event": "ADP Jobs Report", "Level": "🔥 HIGH"},
+    {"Day": "Fri Mar 6", "Time": "08:30 AM", "Event": "Non-Farm Payrolls", "Level": "💣 CRITICAL"}
 ]
 
-# --- 3. SIDEBAR & JOURNAL ---
-with st.sidebar:
-    st.markdown("<h2 style='color:#00ff00;'>🛠️ COMMAND</h2>", unsafe_allow_html=True)
-    if st.button("🔄 REFRESH"): st.rerun()
-    st.divider()
-    
-    # Risk Calculator
-    bal = st.number_input("Balance ($)", value=1000)
-    risk = st.slider("Risk (%)", 0.5, 5.0, 1.0)
-    risk_usd = bal * (risk/100)
-    st.warning(f"Max Risk: ${risk_usd:.2f}")
-    
-    st.divider()
-    # Quick Journal
-    st.subheader("📝 Trade Journal")
-    note = st.text_input("Note (e.g. 'SMA Bounce')")
-    if st.button("💾 SAVE TRADE LOG"):
-        st.toast(f"Logged: {note} | Risk: ${risk_usd}", icon="✅")
-
-# --- 4. DATA ENGINE ---
+# --- 3. DATA ENGINE ---
 @st.cache_data(ttl=60)
 def get_data():
     df = yf.download("^DJI", period="1d", interval="1m")
@@ -72,26 +60,39 @@ def get_data():
     df['Entry'] = df['Trend'].diff()
     return df
 
-# --- 5. MAIN DASHBOARD ---
+# --- 4. DASHBOARD UI ---
 df = get_data()
+status_text, status_color = get_market_status()
 sig = "BUY" if df['Trend'].iloc[-1] == 1 else "SELL"
 sig_c = "#00ff00" if sig == "BUY" else "#ff4b4b"
 
-# Top Row: Title and News Guard
+# Top Row
 c1, c2 = st.columns([2, 1])
 with c1:
     st.markdown(f"<h1 style='color:{sig_c};'>🛡️ PATRO AI PRO: {sig}</h1>", unsafe_allow_html=True)
 with c2:
-    st.markdown("### ⚠️ NEWS GUARD")
-    for e in news_events:
-        st.caption(f"**{e['Time']}** - {e['Event']} ({e['Impact']})")
+    st.markdown(f"<div style='border:2px solid {status_color}; color:{status_color}; padding:8px; border-radius:10px; text-align:center; font-weight:bold;'>{status_text}</div>", unsafe_allow_html=True)
 
 st.divider()
 
-# Chart and Metrics
+# Sidebar
+with st.sidebar:
+    st.markdown("<h2 style='color:#00ff00;'>🛠️ CONTROL</h2>", unsafe_allow_html=True)
+    if st.button("🔄 REFRESH SYSTEM"): st.rerun()
+    st.divider()
+    bal = st.number_input("Balance ($)", value=1000)
+    risk = st.slider("Risk (%)", 0.5, 5.0, 1.0)
+    st.error(f"Trade Risk: ${bal * (risk/100):.2f}")
+    st.divider()
+    st.subheader("⚠️ NEWS GUARD")
+    for news in news_alerts:
+        st.caption(f"**{news['Day']} @ {news['Time']}**")
+        st.write(f"{news['Event']} ({news['Level']})")
+
+# Main Content
 m1, m2, m3 = st.columns(3)
 m1.metric("US30 PRICE", f"${df['Close'].iloc[-1]:,.2f}")
-m2.metric("CURRENT TREND", sig)
+m2.metric("CURRENT SIGNAL", sig)
 m3.metric("RSI (14)", f"{df['RSI'].iloc[-1]:.2f}")
 
 # Chart
@@ -106,5 +107,5 @@ for i in range(1, len(df)):
         fig.add_annotation(x=df.index[i], y=df['High'].iloc[i], text="SELL", bgcolor="red", font=dict(color="white"), row=1, col=1)
 
 fig.add_trace(go.Scatter(x=df.index, y=df['RSI'], name='RSI', line=dict(color='purple')), row=2, col=1)
-fig.update_layout(template='plotly_dark', height=700, xaxis_rangeslider_visible=False)
+fig.update_layout(template='plotly_dark', height=750, xaxis_rangeslider_visible=False)
 st.plotly_chart(fig, use_container_width=True)
