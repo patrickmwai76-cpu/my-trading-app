@@ -7,7 +7,7 @@ import hmac
 from datetime import datetime
 import pytz
 
-# --- 1. THE GATEKEEPER (LOGIN) ---
+# --- 1. SECURITY (MUST BE FIRST) ---
 def check_password():
     def credentials_entered():
         if (st.session_state["username"] == st.secrets["username"] and 
@@ -17,90 +17,93 @@ def check_password():
             del st.session_state["username"]
         else:
             st.session_state["password_correct"] = False
-
-    if st.session_state.get("password_correct", False):
-        return True
-
-    # High-Contrast Login Screen
+    if st.session_state.get("password_correct", False): return True
     st.markdown('<h1 style="color:#00ff00; text-align:center;">🛡️ PATRO AI PRO</h1>', unsafe_allow_html=True)
     col1, col2, col3 = st.columns([1,2,1])
     with col2:
         st.text_input("User Identity", key="username")
         st.text_input("Command Key", type="password", key="password")
-        st.button("INITIALIZE SYSTEM", on_click=credentials_entered)
-        if "password_correct" in st.session_state and not st.session_state["password_correct"]:
-            st.error("🚫 AUTHENTICATION FAILED")
+        st.button("INITIALIZE SYSTEM", on_click=credentials_entered, use_container_width=True)
     return False
 
-# --- 2. LAYOUT & STYLING ---
 st.set_page_config(page_title="PATRO AI PRO", layout="wide")
+if not check_password(): st.stop()
 
-st.markdown("""
-    <style>
-    .stApp { background-color: #0e1117 !important; }
-    [data-testid="stMetric"] {
-        background-color: #1e2130 !important; 
-        border: 2px solid #00ff00 !important;
-        border-radius: 12px !important;
-    }
-    [data-testid="stMetricValue"] { color: #00ff00 !important; font-size: 32px !important; font-weight: 800 !important; }
-    [data-testid="stMetricLabel"] { color: #ffffff !important; }
-    </style>
-    """, unsafe_allow_html=True)
+# --- 2. MARKET STATUS ENGINE ---
+def get_market_status():
+    ny_tz = pytz.timezone('US/Eastern')
+    ny_now = datetime.now(ny_tz)
+    # Check if Weekend (5=Sat, 6=Sun)
+    if ny_now.weekday() >= 5:
+        return "🔴 MARKET CLOSED (WEEKEND)", "#ff4b4b"
+    # Check if outside 9:30 AM - 4:00 PM
+    if ny_now.hour < 9 or (ny_now.hour == 9 and ny_now.minute < 30) or ny_now.hour >= 16:
+        return "🟠 MARKET CLOSED (AFTER HOURS)", "#ffa500"
+    return "🟢 MARKET LIVE (NEW YORK)", "#00ff00"
 
-# Stop here if not logged in
-if not check_password():
-    st.stop()
-
-# --- 3. SIDEBAR (RISK CALCULATOR & REFRESH) ---
-with st.sidebar:
-    st.markdown("<h2 style='color: #00ff00;'>PATRO AI PRO</h2>", unsafe_allow_html=True)
-    if st.button("🔄 REFRESH DATA"):
-        st.cache_data.clear()
-        st.rerun()
-    st.divider()
-    st.subheader("💰 Risk Management")
-    balance = st.number_input("Balance ($)", value=1000)
-    risk_pct = st.slider("Risk (%)", 0.5, 5.0, 1.0)
-    risk_amt = balance * (risk_pct / 100)
-    st.info(f"Risk Amount: ${risk_amt:.2f}")
-
-# --- 4. DATA ENGINE ---
+# --- 3. DATA ENGINE ---
 @st.cache_data(ttl=60)
-def get_patro_data():
+def get_data():
     df = yf.download("^DJI", period="1d", interval="1m")
     df.columns = [col[0] if isinstance(col, tuple) else col for col in df.columns]
     df['SMA20'] = df['Close'].rolling(window=20).mean()
+    # RSI Logic
     delta = df['Close'].diff()
     gain = (delta.where(delta > 0, 0)).rolling(window=14).mean()
     loss = (-delta.where(delta < 0, 0)).rolling(window=14).mean()
     df['RSI'] = 100 - (100 / (1 + (gain / loss)))
-    return df, df['High'].max(), df['Low'].min()
+    # Signals
+    df['Trend'] = 0
+    df.loc[df['Close'] > df['SMA20'], 'Trend'] = 1
+    df.loc[df['Close'] < df['SMA20'], 'Trend'] = -1
+    df['Entry'] = df['Trend'].diff()
+    return df
 
-# --- 5. MAIN DASHBOARD ---
-try:
-    df, d_high, d_low = get_patro_data()
-    curr_p = df['Close'].iloc[-1]
-    
-    # Header
-    st.markdown(f'<h1 style="color:#00ff00;">🛡️ PATRO AI PRO: BUY</h1>', unsafe_allow_html=True)
-    
-    # Metrics
-    m1, m2, m3 = st.columns(3)
-    m1.metric("US30 PRICE", f"${curr_p:,.2f}")
-    m2.metric("CURRENT SIGNAL", "BUY")
-    m3.metric("RSI (14)", f"{df['RSI'].iloc[-1]:.2f}")
+# --- 4. THE UI ---
+status_text, status_color = get_market_status()
+df = get_data()
+curr_p = df['Close'].iloc[-1]
+sig = "BUY" if df['Trend'].iloc[-1] == 1 else "SELL"
+sig_c = "#00ff00" if sig == "BUY" else "#ff4b4b"
 
-    # The Chart
-    fig = make_subplots(rows=2, cols=1, shared_xaxes=True, vertical_spacing=0.03, row_heights=[0.7, 0.3])
-    fig.add_trace(go.Candlestick(x=df.index, open=df['Open'], high=df['High'], low=df['Low'], close=df['Close'], name='US30'), row=1, col=1)
-    fig.add_trace(go.Scatter(x=df.index, y=df['SMA20'], name='Trend', line=dict(color='orange')), row=1, col=1)
-    fig.add_hline(y=d_high, line_dash="dash", line_color="#00ffff", annotation_text="HIGH", row=1, col=1)
-    fig.add_hline(y=d_low, line_dash="dash", line_color="#ff4b4b", annotation_text="LOW", row=1, col=1)
-    fig.add_trace(go.Scatter(x=df.index, y=df['RSI'], name='RSI', line=dict(color='#8A2BE2')), row=2, col=1)
-    
-    fig.update_layout(template='plotly_dark', height=700, xaxis_rangeslider_visible=False)
-    st.plotly_chart(fig, use_container_width=True)
+# HEADER BLOCK
+t1, t2 = st.columns([3, 1])
+with t1:
+    st.markdown(f"<h1 style='color:{sig_c}; margin:0;'>🛡️ PATRO AI PRO: {sig}</h1>", unsafe_allow_html=True)
+with t2:
+    st.markdown(f"<div style='border:2px solid {status_color}; color:{status_color}; padding:10px; border-radius:10px; text-align:center; font-weight:bold; margin-top:10px;'>{status_text}</div>", unsafe_allow_html=True)
 
-except Exception:
-    st.info("Scanner initializing...")
+# SIDEBAR
+with st.sidebar:
+    st.markdown(f"<h3 style='color:#00ff00;'>🛠️ TERMINAL CONTROLS</h3>", unsafe_allow_html=True)
+    if st.button("🔄 REFRESH SYSTEM"): st.rerun()
+    st.divider()
+    bal = st.number_input("Balance ($)", value=1000)
+    risk = st.slider("Risk (%)", 0.5, 5.0, 1.0)
+    st.error(f"Trade Risk: ${bal * (risk/100):.2f}")
+
+# METRICS
+st.divider()
+m1, m2, m3 = st.columns(3)
+m1.metric("US30 PRICE", f"${curr_p:,.2f}")
+m2.metric("SIGNAL", sig)
+m3.metric("RSI (14)", f"{df['RSI'].iloc[-1]:.2f}")
+
+# CHART
+fig = make_subplots(rows=2, cols=1, shared_xaxes=True, row_heights=[0.7, 0.3], vertical_spacing=0.05)
+fig.add_trace(go.Candlestick(x=df.index, open=df['Open'], high=df['High'], low=df['Low'], close=df['Close'], name='US30'), row=1, col=1)
+fig.add_trace(go.Scatter(x=df.index, y=df['SMA20'], name='Trend', line=dict(color='orange')), row=1, col=1)
+
+# Add Buy/Sell boxes
+for i in range(1, len(df)):
+    if df['Entry'].iloc[i] == 2:
+        fig.add_annotation(x=df.index[i], y=df['Low'].iloc[i], text="BUY", bgcolor="green", font=dict(color="white"), row=1, col=1)
+    elif df['Entry'].iloc[i] == -2:
+        fig.add_annotation(x=df.index[i], y=df['High'].iloc[i], text="SELL", bgcolor="red", font=dict(color="white"), row=1, col=1)
+
+fig.add_trace(go.Scatter(x=df.index, y=df['RSI'], name='RSI', line=dict(color='purple')), row=2, col=1)
+fig.update_layout(template='plotly_dark', height=700, xaxis_rangeslider_visible=False)
+st.plotly_chart(fig, use_container_width=True)
+
+with st.expander("📖 VIEW OPERATIONAL MANUAL"):
+    st.write("1. Check Price vs Orange Line. 2. Confirm RSI > 50 for Buy. 3. Manage Risk in Sidebar.")
