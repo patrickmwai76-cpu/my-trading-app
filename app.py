@@ -27,7 +27,7 @@ def check_password():
 
 if not check_password(): st.stop()
 
-# --- 2. DATA ENGINE ---
+# --- 2. DATA ENGINES ---
 @st.cache_data(ttl=60)
 def get_institutional_data():
     df = yf.download("^DJI", period="1d", interval="1m", progress=False)
@@ -45,16 +45,13 @@ def get_institutional_data():
 
 @st.cache_data(ttl=60)
 def get_mtf(ticker, interval):
-    data = yf.download(ticker, period="2d", interval=interval, progress=False)
-    data.columns = [col[0] if isinstance(col, tuple) else col for col in data.columns]
-    return "UP" if data['Close'].iloc[-1] > data['Close'].rolling(20).mean().iloc[-1] else "DOWN"
+    try:
+        data = yf.download(ticker, period="2d", interval=interval, progress=False)
+        data.columns = [col[0] if isinstance(col, tuple) else col for col in data.columns]
+        sma = data['Close'].rolling(window=20).mean()
+        return "UP" if data['Close'].iloc[-1] > sma.iloc[-1] else "DOWN"
+    except: return "N/A"
 
 # DATA LOAD
 df = get_institutional_data()
-t1, t5, t15 = get_mtf("^DJI", "1m"), get_mtf("^DJI", "5m"), get_mtf("^DJI", "15m")
-sig = "BUY" if df['Trend'].iloc[-1] == 1 else "SELL"
-sig_color = "#00ff00" if sig == "BUY" else "#ff4b4b"
-
-# --- 3. TOP COMMAND HEADER ---
-st.markdown(f"""
-    <div style="background-color:#1e2130; padding:15px; border-radius:10px; border-
+t1, t5, t15 = get_mtf("^DJI", "1m"), get_mtf("^DJI", "5m"), get_
