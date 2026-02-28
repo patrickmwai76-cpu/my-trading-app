@@ -4,6 +4,8 @@ import yfinance as yf
 import plotly.graph_objects as go
 from plotly.subplots import make_subplots
 import hmac
+from datetime import datetime
+import pytz
 
 # --- 1. BOOT & SECURITY ---
 st.set_page_config(page_title="PATRO AI PRO", layout="wide")
@@ -27,81 +29,64 @@ def check_password():
 
 if not check_password(): st.stop()
 
-# --- 2. DATA ENGINES ---
-@st.cache_data(ttl=60)
-def get_mtf_trend(ticker, interval):
-    try:
-        data = yf.download(ticker, period="2d", interval=interval, progress=False)
-        data.columns = [col[0] if isinstance(col, tuple) else col for col in data.columns]
-        sma = data['Close'].rolling(window=20).mean()
-        return "UP" if data['Close'].iloc[-1] > sma.iloc[-1] else "DOWN"
-    except: return "N/A"
+# --- 2. TIMEFRAME & DATA CONTROL ---
+with st.sidebar:
+    st.markdown("<h2 style='color:#00ff00;'>⚙️ COMMAND CENTER</h2>", unsafe_allow_html=True)
+    # TIMEFRAME SELECTOR
+    tf = st.selectbox("CHART TIMEFRAME", ["1m", "5m", "15m", "30m", "1h"], index=0)
+    st.divider()
 
 @st.cache_data(ttl=60)
-def get_main_data():
-    df = yf.download("^DJI", period="1d", interval="1m", progress=False)
+def get_custom_data(interval):
+    df = yf.download("^DJI", period="2d", interval=interval, progress=False)
     df.columns = [col[0] if isinstance(col, tuple) else col for col in df.columns]
     df['EMA20'] = df['Close'].ewm(span=20, adjust=False).mean()
-    # RSI Logic
+    # RSI
     delta = df['Close'].diff()
     gain = (delta.where(delta > 0, 0)).rolling(window=14).mean()
     loss = (-delta.where(delta < 0, 0)).rolling(window=14).mean()
     df['RSI'] = 100 - (100 / (1 + (gain / loss)))
-    # Signal Logic
+    # Signal
     df['Trend'] = 0
     df.loc[df['Close'] > df['EMA20'], 'Trend'] = 1
     df.loc[df['Close'] < df['EMA20'], 'Trend'] = -1
     df['Entry'] = df['Trend'].diff()
     return df
 
-# PRE-LOAD
-t1, t5, t15 = get_mtf_trend("^DJI", "1m"), get_mtf_trend("^DJI", "5m"), get_mtf_trend("^DJI", "15m")
-df = get_main_data()
+df = get_custom_data(tf)
 
-# --- 3. SIDEBAR: THE MATRIX ---
-with st.sidebar:
-    st.markdown("<h2 style='color:#00ff00;'>📊 TREND MATRIX</h2>", unsafe_allow_html=True)
-    for label, val in [("1 MIN", t1), ("5 MIN", t5), ("15 MIN", t15)]:
-        c = "#00ff00" if val == "UP" else "#ff4b4b"
-        st.markdown(f"<div style='border:1px solid {c}; padding:10px; border-radius:5px; margin-bottom:5px;'><h4 style='margin:0; color:{c};'>{label}: {val}</h4></div>", unsafe_allow_html=True)
-    st.divider()
-    if st.button("🔄 REFRESH SYSTEM"):
-        st.cache_data.clear()
-        st.rerun()
+# --- 3. NEWS SESSION MONITOR ---
+ny_tz = pytz.timezone('US/Eastern')
+ny_now = datetime.now(ny_tz)
 
-# --- 4. TOP METRICS ---
-sig = "BUY" if df['Trend'].iloc[-1] == 1 else "SELL"
-sig_c = "#00ff00" if sig == "BUY" else "#ff4b4b"
-st.markdown(f"<h1 style='text-align:center; color:{sig_c};'>LIVE SIGNAL: {sig}</h1>", unsafe_allow_html=True)
+st.markdown(f"### 🌐 SESSION: {'NEW YORK' if 9 <= ny_now.hour < 17 else 'AFTER HOURS'}")
+n_col1, n_col2 = st.columns(2)
+with n_col1:
+    st.warning("**COMING UP:** ISM Manufacturing PMI\n\n🕒 Monday 10:00 AM NY Time")
+with n_col2:
+    st.error("**CRITICAL:** Non-Farm Payrolls (NFP)\n\n🕒 Friday 08:30 AM NY Time")
 
-# --- 5. THE TRIPLE CHART ---
-fig = make_subplots(rows=3, cols=1, shared_xaxes=True, 
-                    vertical_spacing=0.02, row_heights=[0.6, 0.2, 0.2])
+st.divider()
 
-# Price (Row 1)
-fig.add_trace(go.Candlestick(
-    x=df.index, open=df['Open'], high=df['High'], low=df['Low'], close=df['Close'],
-    name='US30', increasing_line_color='#00ff00', decreasing_line_color='#ff4b4b'
-), row=1, col=1)
+# --- 4. MAIN CHART ---
+last_sig = "BUY" if df['Trend'].iloc[-1] == 1 else "SELL"
+sig_color = "#00ff00" if last_sig == "BUY" else "#ff4b4b"
 
-# Tags (Row 1)
+m1, m2, m3 = st.columns(3)
+m1.metric(f"US30 ({tf})", f"${df['Close'].iloc[-1]:,.2f}")
+m2.markdown(f"<p style='color:grey;margin:0;'>AI SIGNAL</p><h2 style='color:{sig_color};margin:0;'>{last_sig}</h2>", unsafe_allow_html=True)
+m3.metric("RSI", f"{df['RSI'].iloc[-1]:.2f}")
+
+fig = make_subplots(rows=2, cols=1, shared_xaxes=True, row_heights=[0.8, 0.2], vertical_spacing=0.03)
+# Candles
+fig.add_trace(go.Candlestick(x=df.index, open=df['Open'], high=df['High'], low=df['Low'], close=df['Close'], name='US30'), row=1, col=1)
+# Tags
 buys = df[df['Entry'] == 2]
-fig.add_trace(go.Scatter(x=buys.index, y=buys['Low']*0.9998, mode='markers+text', 
-                         text="BUY", textposition="bottom center",
-                         marker=dict(color='#00ff00', size=12, symbol='triangle-up')), row=1, col=1)
-
+fig.add_trace(go.Scatter(x=buys.index, y=buys['Low']*0.9998, mode='markers+text', text="BUY", textposition="bottom center", marker=dict(color='#00ff00', size=10, symbol='triangle-up')), row=1, col=1)
 sells = df[df['Entry'] == -2]
-fig.add_trace(go.Scatter(x=sells.index, y=sells['High']*1.0002, mode='markers+text', 
-                         text="SELL", textposition="top center",
-                         marker=dict(color='#ff4b4b', size=12, symbol='triangle-down')), row=1, col=1)
+fig.add_trace(go.Scatter(x=sells.index, y=sells['High']*1.0002, mode='markers+text', text="SELL", textposition="top center", marker=dict(color='#ff4b4b', size=10, symbol='triangle-down')), row=1, col=1)
+# Volume
+fig.add_trace(go.Bar(x=df.index, y=df['Volume'], marker_color='grey', opacity=0.3, name='Volume'), row=2, col=1)
 
-# Volume (Row 2)
-fig.add_trace(go.Bar(x=df.index, y=df['Volume'], name='Volume', marker_color='grey', opacity=0.4), row=2, col=1)
-
-# RSI (Row 3)
-fig.add_trace(go.Scatter(x=df.index, y=df['RSI'], name='RSI', line=dict(color='purple', width=2)), row=3, col=1)
-fig.add_hline(y=70, line_dash="dot", line_color="red", row=3, col=1)
-fig.add_hline(y=30, line_dash="dot", line_color="green", row=3, col=1)
-
-fig.update_layout(template='plotly_dark', height=950, xaxis_rangeslider_visible=False, showlegend=False)
+fig.update_layout(template='plotly_dark', height=800, xaxis_rangeslider_visible=False, showlegend=False)
 st.plotly_chart(fig, use_container_width=True)
