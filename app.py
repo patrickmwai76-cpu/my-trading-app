@@ -7,7 +7,7 @@ import hmac
 from datetime import datetime
 import pytz
 
-# --- 1. SECURITY ---
+# --- 1. SECURITY & CONFIG ---
 def check_password():
     def credentials_entered():
         if (st.session_state["username"] == st.secrets["username"] and 
@@ -84,28 +84,36 @@ with st.sidebar:
 
 # --- 5. MAIN CONTENT ---
 df = get_main_data()
-sig = "BUY" if df['Close'].iloc[-1] > df['SMA20'].iloc[-1] else "SELL"
+curr_p = df['Close'].iloc[-1]
+sig = "BUY" if curr_p > df['SMA20'].iloc[-1] else "SELL"
 sig_c = "#00ff00" if sig == "BUY" else "#ff4b4b"
 
-# WEEKEND STATUS
+# CALCULATE TP/SL (1:2 Risk-Reward)
+diff = abs(curr_p - df['SMA20'].iloc[-1]) * 2
+tp = curr_p + diff if sig == "BUY" else curr_p - diff
+sl = curr_p - (diff/2) if sig == "BUY" else curr_p + (diff/2)
+
 st.markdown(f"<h1 style='text-align:center; color:#00ff00;'>🛡️ WEEKEND SESSION</h1>", unsafe_allow_html=True)
-st.markdown(f"<p style='text-align:center;'>Market Closed | NY Time: {datetime.now(pytz.timezone('US/Eastern')).strftime('%H:%M')}</p>", unsafe_allow_html=True)
 
 m1, m2, m3 = st.columns(3)
-m1.metric("US30 PRICE", f"${df['Close'].iloc[-1]:,.2f}")
-m2.metric("AI SIGNAL", sig)
-m3.metric("RSI (14)", f"{df['RSI'].iloc[-1]:.2f}")
+m1.metric("US30 PRICE", f"${curr_p:,.2f}")
+m2.metric("TP (PROFIT)", f"${tp:,.2f}")
+m3.metric("SL (STOP)", f"${sl:,.2f}")
 
-# CHART WITH VOLUME
-fig = make_subplots(rows=3, cols=1, shared_xaxes=True, vertical_spacing=0.02, row_heights=[0.6, 0.2, 0.2])
+# CHART WITH VOLUME & TARGETS
+fig = make_subplots(rows=2, cols=1, shared_xaxes=True, vertical_spacing=0.03, row_heights=[0.8, 0.2])
+
 # Main Candles
-fig.add_trace(go.Candlestick(x=df.index, open=df['Open'], high=df['High'], low=df['Low'], close=df['Close'], name='US30'), row=1, col=1)
-fig.add_trace(go.Scatter(x=df.index, y=df['SMA20'], name='EMA 20', line=dict(color='orange')), row=1, col=1)
-# Volume
-colors = ['green' if df['Close'].iloc[i] > df['Open'].iloc[i] else 'red' for i in range(len(df))]
-fig.add_trace(go.Bar(x=df.index, y=df['Volume'], name='Volume', marker_color=colors), row=2, col=1)
-# RSI
-fig.add_trace(go.Scatter(x=df.index, y=df['RSI'], name='RSI', line=dict(color='purple')), row=3, col=1)
+fig.add_trace(go.Candlestick(x=df.index, open=df['Open'], high=df['High'], low=df['Low'], close=df['Close'], name='Price'), row=1, col=1)
+fig.add_trace(go.Scatter(x=df.index, y=df['SMA20'], name='Trend', line=dict(color='orange')), row=1, col=1)
 
-fig.update_layout(template='plotly_dark', height=850, xaxis_rangeslider_visible=False, showlegend=False)
+# Target Lines
+fig.add_hline(y=tp, line_dash="dash", line_color="green", annotation_text="TAKE PROFIT", row=1, col=1)
+fig.add_hline(y=sl, line_dash="dash", line_color="red", annotation_text="STOP LOSS", row=1, col=1)
+
+# VOLUME (The Basement)
+colors = ['#00ff00' if df['Close'].iloc[i] > df['Open'].iloc[i] else '#ff4b4b' for i in range(len(df))]
+fig.add_trace(go.Bar(x=df.index, y=df['Volume'], name='Volume', marker_color=colors), row=2, col=1)
+
+fig.update_layout(template='plotly_dark', height=800, xaxis_rangeslider_visible=False, showlegend=False)
 st.plotly_chart(fig, use_container_width=True)
