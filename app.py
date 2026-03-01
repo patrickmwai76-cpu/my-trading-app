@@ -2,79 +2,65 @@ import streamlit as st
 import yfinance as yf
 import plotly.graph_objects as go
 import pandas as pd
-from streamlit_autorefresh import st_autorefresh
-from plotly.subplots import make_subplots
 
-# 1. Page Config & Professional Theme
-st.set_page_config(page_title="PATRO AI PRO | Terminal", layout="wide")
-st_autorefresh(interval=30000, key="patroupdate")
+# 1. Page Configuration
+st.set_page_config(page_title="US30 AI Pro", layout="wide")
 
-# 2. Sidebar - Controls & Trend Matrix
-st.sidebar.title("🛡️ TERMINAL CONTROL")
-tf = st.sidebar.radio("Timeframe", ["1m", "5m", "15m"], index=0, horizontal=True)
+# 2. Sidebar - Risk Calculator & Alerts
+st.sidebar.title("🛠️ Trading Tools")
 
+# --- Risk Calculator ---
+st.sidebar.subheader("Risk Calculator")
+balance = st.sidebar.number_input("Account Balance ($)", value=1000)
+risk_percent = st.sidebar.slider("Risk (%)", 1, 5, 1)
+stop_loss_pips = st.sidebar.number_input("Stop Loss (Points)", value=50)
+
+risk_amount = balance * (risk_percent / 100)
+lot_size = risk_amount / stop_loss_pips
+
+st.sidebar.info(f"Risk Amount: ${risk_amount:.2f}\n\nSuggested Lot: {lot_size:.2f}")
+
+# --- Price Alert Setup ---
 st.sidebar.divider()
-st.sidebar.subheader("📊 TREND MATRIX")
-# These match your photo 1000390621.heic
-st.sidebar.markdown("""
-    <div style="border: 1px solid #4CAF50; color: #4CAF50; padding: 10px; border-radius: 5px; text-align: center; margin-bottom: 5px;">1M: UP</div>
-    <div style="border: 1px solid #4CAF50; color: #4CAF50; padding: 10px; border-radius: 5px; text-align: center; margin-bottom: 5px;">5M: UP</div>
-    <div style="border: 1px solid #4CAF50; color: #4CAF50; padding: 10px; border-radius: 5px; text-align: center; margin-bottom: 5px;">15M: UP</div>
-""", unsafe_allow_html=True)
+st.sidebar.subheader("Set Price Alert")
+alert_price = st.sidebar.number_input("Alert Price ($)", value=48000.0)
+alert_type = st.sidebar.selectbox("Alert When Price Goes:", ["Above", "Below"])
 
-if st.sidebar.button("🔄 FULL SYSTEM REFRESH"):
-    st.rerun()
+# 3. Main Dashboard - Data Fetching
+st.title("📊 US30 AI Live Dashboard")
 
-# 3. Data Engine
-df = yf.download("^DJI", period="1d", interval=tf, group_by='column')
+df = yf.download("^DJI", period="1d", interval="15m")
 
 if not df.empty:
-    # Standardize columns to avoid Multi-Index error
-    df = df.copy()
-    if isinstance(df.columns, pd.MultiIndex):
-        df.columns = df.columns.get_level_values(0)
+    price = df['Close'].iloc[-1].item()
+    avg_price = df['Close'].mean().item()
+    
+    # Metrics
+    col1, col2 = st.columns(2)
+    col1.metric("Current US30", f"${price:,.2f}")
+    col2.metric("Daily Average", f"${avg_price:,.2f}")
 
-    # --- Indicators ---
-    df['SMA_20'] = df['Close'].rolling(window=20).mean()
-    # RSI Fix from previous error
-    delta = df['Close'].diff()
-    gain = (delta.where(delta > 0, 0)).rolling(window=14).mean()
-    loss = (-delta.where(delta < 0, 0)).rolling(window=14).mean()
-    rs = gain / (loss + 1e-9)
-    df['RSI'] = 100 - (100 / (1 + rs))
+    # --- AI Signal Logic ---
+    if price > avg_price:
+        st.success("🚀 AI SIGNAL: BUY (Strong Momentum)")
+    else:
+        st.error("📉 AI SIGNAL: SELL (Bearish Trend)")
 
-    # 4. Creating the 3-Layer Chart (Price/Volume/RSI)
-    fig = make_subplots(
-        rows=3, cols=1, 
-        shared_xaxes=True, 
-        vertical_spacing=0.02, 
-        row_heights=[0.6, 0.15, 0.25]
-    )
+    # --- Price Alert Logic ---
+    if alert_type == "Above" and price >= alert_price:
+        st.toast(f"🚨 ALERT: US30 is ABOVE {alert_price}!", icon="📈")
+        st.warning(f"PRICE TARGET REACHED: ${price:,.2f}")
+    elif alert_type == "Below" and price <= alert_price:
+        st.toast(f"🚨 ALERT: US30 is BELOW {alert_price}!", icon="📉")
+        st.warning(f"PRICE TARGET REACHED: ${price:,.2f}")
 
-    # LAYER 1: Candles & Real Signals
-    fig.add_trace(go.Candlestick(x=df.index, open=df['Open'], high=df['High'], low=df['Low'], close=df['Close'], name='Price'), row=1, col=1)
-    fig.add_trace(go.Scatter(x=df.index, y=df['SMA_20'], name='Trend', line=dict(color='orange', width=1.5, dash='dash')), row=1, col=1)
-
-    # REAL SIGNAL LOGIC: Cross + RSI Confirmation
-    for i in range(2, len(df)):
-        # Real Buy: Price crosses above SMA AND RSI is NOT overbought
-        if df['Close'].iloc[i] > df['SMA_20'].iloc[i] and df['Close'].iloc[i-1] <= df['SMA_20'].iloc[i-1] and df['RSI'].iloc[i] < 70:
-            fig.add_annotation(x=df.index[i], y=df['Low'].iloc[i], text="BUY", showarrow=True, arrowhead=1, bgcolor="#00FF00", font=dict(color="black", size=10), ay=25, row=1, col=1)
-        
-        # Real Sell: Price crosses below SMA AND RSI is NOT oversold
-        elif df['Close'].iloc[i] < df['SMA_20'].iloc[i] and df['Close'].iloc[i-1] >= df['SMA_20'].iloc[i-1] and df['RSI'].iloc[i] > 30:
-            fig.add_annotation(x=df.index[i], y=df['High'].iloc[i], text="SELL", showarrow=True, arrowhead=1, bgcolor="#FF0000", font=dict(color="white", size=10), ay=-25, row=1, col=1)
-
-    # LAYER 2: Real Volume Bars (from 1000390813.heic)
-    colors = ['#00FF00' if df['Close'].iloc[i] > df['Open'].iloc[i] else '#FF0000' for i in range(len(df))]
-    fig.add_trace(go.Bar(x=df.index, y=df['Volume'], marker_color=colors, name='Volume', opacity=0.8), row=2, col=1)
-
-    # LAYER 3: RSI Purple Line
-    fig.add_trace(go.Scatter(x=df.index, y=df['RSI'], name='RSI', line=dict(color='#a020f0', width=2)), row=3, col=1)
-    fig.add_hline(y=70, line_dash="dash", line_color="red", row=3, col=1)
-    fig.add_hline(y=30, line_dash="dash", line_color="green", row=3, col=1)
-
-    fig.update_layout(template="plotly_dark", height=900, xaxis_rangeslider_visible=False, margin=dict(l=10, r=10, t=20, b=0))
+    # --- Professional Interactive Chart ---
+    fig = go.Figure()
+    fig.add_trace(go.Scatter(x=df.index, y=df['Close'], name='Price', line=dict(color='#00cfcc', width=2)))
+    fig.add_trace(go.Scatter(x=df.index, y=[avg_price]*len(df), name='AI Baseline', line=dict(color='orange', dash='dash')))
+    
+    fig.update_layout(template="plotly_dark", xaxis_rangeslider_visible=False, height=500)
     st.plotly_chart(fig, use_container_width=True)
+
 else:
-    st.warning("Waiting for Market Data...")
+    st.warning("Waiting for Market Data... Check back in a few seconds.")
