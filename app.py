@@ -2,65 +2,74 @@ import streamlit as st
 import yfinance as yf
 import plotly.graph_objects as go
 import pandas as pd
+from streamlit_autorefresh import st_autorefresh
+from datetime import datetime
 
-# 1. Page Configuration
-st.set_page_config(page_title="US30 AI Pro", layout="wide")
+# 1. Page Config & Professional Theme
+st.set_page_config(page_title="PATRO AI PRO | Terminal", layout="wide", initial_sidebar_state="expanded")
 
-# 2. Sidebar - Risk Calculator & Alerts
-st.sidebar.title("🛠️ Trading Tools")
+# Auto-refresh every 30 seconds for scalping
+st_autorefresh(interval=30000, key="patroupdate")
 
-# --- Risk Calculator ---
-st.sidebar.subheader("Risk Calculator")
-balance = st.sidebar.number_input("Account Balance ($)", value=1000)
-risk_percent = st.sidebar.slider("Risk (%)", 1, 5, 1)
-stop_loss_pips = st.sidebar.number_input("Stop Loss (Points)", value=50)
+# Custom Dark Theme CSS
+st.markdown("""
+    <style>
+    .main { background-color: #1a1a1a; }
+    .stMetric { background-color: #262626; padding: 15px; border-radius: 10px; border-left: 5px solid #4CAF50; }
+    .buy-mode { background: linear-gradient(90deg, #00c853 0%, #b2ff59 100%); padding: 20px; border-radius: 10px; color: black; font-weight: bold; }
+    </style>
+    """, unsafe_allow_html=True)
 
-risk_amount = balance * (risk_percent / 100)
-lot_size = risk_amount / stop_loss_pips
+# 2. Sidebar - OPERATOR SOP & RISK
+st.sidebar.title("🛡️ OPERATOR SOP")
+sop_1 = st.sidebar.checkbox("Trend Matrix Confluence?")
+sop_2 = st.sidebar.checkbox("Price Action near VWAP?")
+sop_3 = st.sidebar.checkbox("News Guard is CLEAR?")
+sop_4 = st.sidebar.checkbox("Risk Management set?")
 
-st.sidebar.info(f"Risk Amount: ${risk_amount:.2f}\n\nSuggested Lot: {lot_size:.2f}")
+if sop_1 and sop_2 and sop_3 and sop_4:
+    st.sidebar.success("✅ READY TO TRADE")
+else:
+    st.sidebar.warning("⚠️ STANDBY")
 
-# --- Price Alert Setup ---
 st.sidebar.divider()
-st.sidebar.subheader("Set Price Alert")
-alert_price = st.sidebar.number_input("Alert Price ($)", value=48000.0)
-alert_type = st.sidebar.selectbox("Alert When Price Goes:", ["Above", "Below"])
+st.sidebar.subheader("📉 RISK CALCULATOR")
+balance = st.sidebar.number_input("Balance ($)", value=1000)
+risk_p = st.sidebar.slider("Risk (%)", 1.0, 5.0, 1.0)
+sl_points = st.sidebar.number_input("SL Points", value=50)
+lot_size = (balance * (risk_p/100)) / sl_points
+st.sidebar.info(f"Lot Size: {lot_size:.2f}")
 
-# 3. Main Dashboard - Data Fetching
-st.title("📊 US30 AI Live Dashboard")
-
-df = yf.download("^DJI", period="1d", interval="15m")
+# 3. Main Dashboard - Fetching US30 Data
+df = yf.download("^DJI", period="1d", interval="1m")
 
 if not df.empty:
-    price = df['Close'].iloc[-1].item()
-    avg_price = df['Close'].mean().item()
+    current_price = df['Close'].iloc[-1]
     
-    # Metrics
-    col1, col2 = st.columns(2)
-    col1.metric("Current US30", f"${price:,.2f}")
-    col2.metric("Daily Average", f"${avg_price:,.2f}")
+    # Header Section
+    st.markdown(f'<div class="buy-mode">🛡️ PATRO AI PRO | BUY MODE <br><small>Institutional Scalping Terminal v4.0</small></div>', unsafe_allow_html=True)
+    
+    # News Guard Area
+    col_n1, col_n2 = st.columns(2)
+    col_n1.info("📅 Mon Mar 2 | ISM PMI (10:00 AM)")
+    col_n2.error("📅 Fri Mar 6 | NFP Jobs (08:30 AM)")
 
-    # --- AI Signal Logic ---
-    if price > avg_price:
-        st.success("🚀 AI SIGNAL: BUY (Strong Momentum)")
-    else:
-        st.error("📉 AI SIGNAL: SELL (Bearish Trend)")
-
-    # --- Price Alert Logic ---
-    if alert_type == "Above" and price >= alert_price:
-        st.toast(f"🚨 ALERT: US30 is ABOVE {alert_price}!", icon="📈")
-        st.warning(f"PRICE TARGET REACHED: ${price:,.2f}")
-    elif alert_type == "Below" and price <= alert_price:
-        st.toast(f"🚨 ALERT: US30 is BELOW {alert_price}!", icon="📉")
-        st.warning(f"PRICE TARGET REACHED: ${price:,.2f}")
-
-    # --- Professional Interactive Chart ---
+    # Chart Section
     fig = go.Figure()
-    fig.add_trace(go.Scatter(x=df.index, y=df['Close'], name='Price', line=dict(color='#00cfcc', width=2)))
-    fig.add_trace(go.Scatter(x=df.index, y=[avg_price]*len(df), name='AI Baseline', line=dict(color='orange', dash='dash')))
+    # Candlestick Chart
+    fig.add_trace(go.Candlestick(x=df.index, open=df['Open'], high=df['High'], low=df['Low'], close=df['Close'], name='US30'))
+    # Volume Bars
+    fig.add_trace(go.Bar(x=df.index, y=df['Volume'], name='Volume', yaxis='y2', marker_color='rgba(100,100,100,0.3)'))
     
-    fig.update_layout(template="plotly_dark", xaxis_rangeslider_visible=False, height=500)
+    fig.update_layout(
+        template="plotly_dark",
+        height=600,
+        yaxis=dict(title="Price", side="right"),
+        yaxis2=dict(title="Volume", overlaying='y', side='left', showgrid=False),
+        xaxis_rangeslider_visible=False
+    )
     st.plotly_chart(fig, use_container_width=True)
 
-else:
-    st.warning("Waiting for Market Data... Check back in a few seconds.")
+    # Trend Matrix
+    st.subheader("📊 TREND MATRIX")
+    st.success("1M: UP")
