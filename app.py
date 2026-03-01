@@ -121,7 +121,6 @@ fig.update_layout(template='plotly_dark', height=800, xaxis_rangeslider_visible=
 st.plotly_chart(fig, use_container_width=True)
 
 # --- 5. SIDEBAR ---
-with st.sidebar:# Add this at the very top of your sidebar code
 if st.sidebar.button("🔄 Refresh Market Data"):
     st.rerun()
     st.markdown("<h2 style='color:#00ff00;'>🛡️ OPERATOR SOP</h2>", unsafe_allow_html=True)
