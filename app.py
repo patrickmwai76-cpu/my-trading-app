@@ -9,7 +9,6 @@ from plotly.subplots import make_subplots
 ADMIN_USER = "PATRO_ADMIN"
 ADMIN_PASS = "patro666@"
 
-# 2. Login Logic
 if 'logged_in' not in st.session_state:
     st.session_state['logged_in'] = False
 
@@ -22,37 +21,44 @@ def login():
             st.session_state['logged_in'] = True
             st.rerun()
         else:
-            st.error("Access Denied: Invalid Credentials")
+            st.error("Access Denied")
 
 if not st.session_state['logged_in']:
     login()
 else:
-    # --- FULL TERMINAL CODE STARTS HERE ---
+    # --- TERMINAL LOAD ---
     st.set_page_config(page_title="PATRO AI PRO | Terminal", layout="wide")
     st_autorefresh(interval=30000, key="patroupdate")
 
-    # Custom Styling
+    # Sidebar Styling
     st.markdown("""
         <style>
-        .buy-mode-header { 
-            background: linear-gradient(90deg, #00c853 0%, #b2ff59 100%); 
-            padding: 20px; border-radius: 10px; color: black; 
-            font-weight: bold; text-align: center; margin-bottom: 10px;
-        }
-        .news-guard { color: #4CAF50; font-weight: bold; font-size: 14px; margin-bottom: 10px; }
-        .news-box-blue { background-color: #1e3a5f; padding: 15px; border-radius: 8px; color: #94c1ff; text-align: center; }
-        .news-box-red { background-color: #4a1c1c; padding: 15px; border-radius: 8px; color: #ff9494; text-align: center; }
-        .trend-box { border: 1px solid #4CAF50; color: #4CAF50; padding: 10px; border-radius: 5px; text-align: center; margin-bottom: 5px; font-weight: bold; }
+        [data-testid="stSidebar"] { background-color: #121212; }
+        .sop-status { padding: 10px; border-radius: 5px; text-align: center; font-weight: bold; margin-top: 10px; }
+        .trend-box { border: 1px solid #4CAF50; color: #4CAF50; padding: 8px; border-radius: 5px; text-align: center; margin-bottom: 5px; font-size: 12px; }
+        .buy-mode-header { background: linear-gradient(90deg, #00c853 0%, #b2ff59 100%); padding: 15px; border-radius: 10px; color: black; font-weight: bold; text-align: center; }
         </style>
         """, unsafe_allow_html=True)
 
-    # 3. Sidebar - TERMINAL CONTROL
-    st.sidebar.title("🛡️ TERMINAL CONTROL")
-    if st.sidebar.button("🔒 Logout"):
-        st.session_state['logged_in'] = False
-        st.rerun()
+    # 2. Sidebar - OPERATOR SOP & RISK
+    st.sidebar.title("🛡️ OPERATOR SOP")
+    c1 = st.sidebar.checkbox("Trend Matrix Confluence?")
+    c2 = st.sidebar.checkbox("Price Action near VWAP?")
+    c3 = st.sidebar.checkbox("News Guard is CLEAR?")
+    c4 = st.sidebar.checkbox("Risk Management set?")
+    
+    if c1 and c2 and c3 and c4:
+        st.sidebar.markdown('<div class="sop-status" style="background-color: #006400; color: #90ee90;">✅ READY TO TRADE</div>', unsafe_allow_html=True)
+    else:
+        st.sidebar.markdown('<div class="sop-status" style="background-color: #4b4b00; color: #ffffed;">⚠️ STANDBY</div>', unsafe_allow_html=True)
 
-    tf = st.sidebar.radio("Timeframe", ["1m", "5m", "15m"], index=0, horizontal=True)
+    st.sidebar.divider()
+    st.sidebar.subheader("📉 RISK CALCULATOR")
+    balance = st.sidebar.number_input("Balance ($)", value=1000)
+    risk_p = st.sidebar.slider("Risk %", 0.5, 5.0, 1.0)
+    sl_pts = st.sidebar.number_input("SL Points", value=50)
+    lots = (balance * (risk_p/100)) / sl_pts
+    st.sidebar.info(f"Suggested Lot Size: {lots:.2f}")
 
     st.sidebar.divider()
     st.sidebar.subheader("📊 TREND MATRIX")
@@ -60,57 +66,44 @@ else:
     st.sidebar.markdown('<div class="trend-box">5M: UP</div>', unsafe_allow_html=True)
     st.sidebar.markdown('<div class="trend-box">15M: UP</div>', unsafe_allow_html=True)
 
-    # 4. Header & News Guard (Restored)
+    if st.sidebar.button("🔒 Logout"):
+        st.session_state['logged_in'] = False
+        st.rerun()
+
+    # 3. Main Dashboard Header
     st.markdown('<div class="buy-mode-header">🛡️ PATRO AI PRO | BUY MODE<br><small>Institutional Scalping Terminal v4.0</small></div>', unsafe_allow_html=True)
-    st.markdown('<div class="news-guard">🛡️ NEWS GUARD ACTIVE</div>', unsafe_allow_html=True)
-    n_col1, n_col2 = st.columns(2)
-    with n_col1:
-        st.markdown('<div class="news-box-blue">Mon Mar 2 | ISM PMI (10:00 AM)</div>', unsafe_allow_html=True)
-    with n_col2:
-        st.markdown('<div class="news-box-red">Fri Mar 6 | NFP Jobs (08:30 AM)</div>', unsafe_allow_html=True)
+    
+    # News Guard Area
+    st.write("🛡️ **NEWS GUARD ACTIVE**")
+    n1, n2 = st.columns(2)
+    n1.info("Mon Mar 2 | ISM PMI (10:00 AM)")
+    n2.error("Fri Mar 6 | NFP Jobs (08:30 AM)")
 
-    st.divider()
-
-    # 5. Live Market Data
-    df = yf.download("^DJI", period="1d", interval=tf, group_by='column')
-
+    # 4. Charting Logic
+    df = yf.download("^DJI", period="1d", interval="1m", group_by='column')
     if not df.empty:
         df = df.copy()
-        if isinstance(df.columns, pd.MultiIndex):
-            df.columns = df.columns.get_level_values(0)
-
-        # Technical Indicators
+        if isinstance(df.columns, pd.MultiIndex): df.columns = df.columns.get_level_values(0)
+        
+        # Technicals
         df['SMA_20'] = df['Close'].rolling(window=20).mean()
-        delta = df['Close'].diff()
-        gain = (delta.where(delta > 0, 0)).rolling(window=14).mean()
-        loss = (-delta.where(delta < 0, 0)).rolling(window=14).mean()
-        rs = gain / (loss + 1e-9)
-        df['RSI'] = 100 - (100 / (1 + rs))
+        # RSI Calculation
+        delta = df['Close'].diff(); gain = (delta.where(delta > 0, 0)).rolling(14).mean(); loss = (-delta.where(delta < 0, 0)).rolling(14).mean()
+        rs = gain / (loss + 1e-9); df['RSI'] = 100 - (100 / (1 + rs))
 
-        # 3-Layer Chart
         fig = make_subplots(rows=3, cols=1, shared_xaxes=True, vertical_spacing=0.02, row_heights=[0.6, 0.15, 0.25])
-
-        # LAYER 1: Candles & Real Signals
-        fig.add_trace(go.Candlestick(x=df.index, open=df['Open'], high=df['High'], low=df['Low'], close=df['Close'], name='Price'), row=1, col=1)
-        fig.add_trace(go.Scatter(x=df.index, y=df['SMA_20'], name='Trend', line=dict(color='orange', width=1.5, dash='dash')), row=1, col=1)
-
-        # Signals logic
+        fig.add_trace(go.Candlestick(x=df.index, open=df['Open'], high=df['High'], low=df['Low'], close=df['Close'], name='US30'), row=1, col=1)
+        
+        # Real Signals
         for i in range(2, len(df)):
             if df['Close'].iloc[i] > df['SMA_20'].iloc[i] and df['Close'].iloc[i-1] <= df['SMA_20'].iloc[i-1]:
-                fig.add_annotation(x=df.index[i], y=df['Low'].iloc[i], text="BUY", bgcolor="#00FF00", font=dict(color="black", size=10), row=1, col=1)
+                fig.add_annotation(x=df.index[i], y=df['Low'].iloc[i], text="BUY", bgcolor="#00FF00", row=1, col=1)
             elif df['Close'].iloc[i] < df['SMA_20'].iloc[i] and df['Close'].iloc[i-1] >= df['SMA_20'].iloc[i-1]:
-                fig.add_annotation(x=df.index[i], y=df['High'].iloc[i], text="SELL", bgcolor="#FF0000", font=dict(color="white", size=10), row=1, col=1)
+                fig.add_annotation(x=df.index[i], y=df['High'].iloc[i], text="SELL", bgcolor="#FF0000", font=dict(color="white"), row=1, col=1)
 
-        # LAYER 2: Volume
-        v_colors = ['#00FF00' if df['Close'].iloc[i] > df['Open'].iloc[i] else '#FF0000' for i in range(len(df))]
-        fig.add_trace(go.Bar(x=df.index, y=df['Volume'], marker_color=v_colors, name='Volume'), row=2, col=1)
+        # Volume & RSI
+        fig.add_trace(go.Bar(x=df.index, y=df['Volume'], name='Volume'), row=2, col=1)
+        fig.add_trace(go.Scatter(x=df.index, y=df['RSI'], name='RSI', line=dict(color='#a020f0')), row=3, col=1)
 
-        # LAYER 3: RSI Purple Line
-        fig.add_trace(go.Scatter(x=df.index, y=df['RSI'], name='RSI', line=dict(color='#a020f0', width=2)), row=3, col=1)
-        fig.add_hline(y=70, line_dash="dash", line_color="red", row=3, col=1)
-        fig.add_hline(y=30, line_dash="dash", line_color="green", row=3, col=1)
-
-        fig.update_layout(template="plotly_dark", height=900, xaxis_rangeslider_visible=False, margin=dict(l=10, r=10, t=10, b=0))
+        fig.update_layout(template="plotly_dark", height=800, xaxis_rangeslider_visible=False)
         st.plotly_chart(fig, use_container_width=True)
-    else:
-        st.info("Awaiting Market Volatility...")
