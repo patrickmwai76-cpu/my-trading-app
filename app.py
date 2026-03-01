@@ -28,9 +28,19 @@ def check_password():
     return False
 
 if not check_password(): st.stop()
+# 1. Add the Selection Buttons in the sidebar
+st.sidebar.divider()
+st.sidebar.subheader("Select Timeframe")
+# This creates a row of 3 buttons: 1m, 5m, and 15m
+timeframe = st.sidebar.radio(
+    "Chart Interval", 
+    ["1m", "5m", "15m"], 
+    index=2,      # Defaults to 15m
+    horizontal=True
+)
 
-# --- 2. DATA ENGINE ---
-@st.cache_data(ttl=60)
+# 2. Tell the AI to download data based on your choice
+df = yf.download("^DJI", period="1d", interval=timeframe)
 def get_master_data():
     df = yf.download("^DJI", period="1d", interval="1m", progress=False)
     df.columns = [col[0] if isinstance(col, tuple) else col for col in df.columns]
