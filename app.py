@@ -121,8 +121,6 @@ fig.update_layout(template='plotly_dark', height=800, xaxis_rangeslider_visible=
 st.plotly_chart(fig, use_container_width=True)
 
 # --- 5. SIDEBAR ---
-if st.sidebar.button("🔄 Refresh Market Data"):
-    st.rerun()
     st.markdown("<h2 style='color:#00ff00;'>🛡️ OPERATOR SOP</h2>", unsafe_allow_html=True)
     c1 = st.checkbox("Trend Matrix Confluence?")
     c2 = st.checkbox("Price Action near VWAP?")
