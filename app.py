@@ -1,73 +1,70 @@
 import streamlit as st
 import yfinance as yf
 import plotly.graph_objects as go
-from plotly.subplots import make_subplots
 import pandas as pd
 from streamlit_autorefresh import st_autorefresh
 
-# 1. Page Setup
-st.set_page_config(page_title="PATRO AI | PRO TERMINAL", layout="wide")
-st_autorefresh(interval=30000, key="live_update")
+# 1. Page Config & Professional Theme
+st.set_page_config(page_title="PATRO AI PRO | Terminal", layout="wide")
 
-# 2. Sidebar - Risk & Settings
-st.sidebar.title("🛡️ TERMINAL CONTROL")
-tf = st.sidebar.radio("Timeframe", ["1m", "5m", "15m"], index=1, horizontal=True)
+# Auto-refresh every 30 seconds to keep the data live
+st_autorefresh(interval=30000, key="patroupdate")
 
-# Risk Calculator (Integrated)
+# Custom Styling for the "Institutional" look
+st.markdown("""
+    <style>
+    .stMetric { background-color: #262626; padding: 15px; border-radius: 10px; border-left: 5px solid #4CAF50; }
+    .buy-mode { background: linear-gradient(90deg, #00c853 0%, #b2ff59 100%); padding: 20px; border-radius: 10px; color: black; font-weight: bold; text-align: center; }
+    </style>
+    """, unsafe_allow_html=True)
+
+# 2. Sidebar - OPERATOR SOP & RISK
+st.sidebar.title("🛡️ OPERATOR SOP")
+sop1 = st.sidebar.checkbox("Trend Matrix Confluence?")
+sop2 = st.sidebar.checkbox("Price Action near VWAP?")
+sop3 = st.sidebar.checkbox("News Guard is CLEAR?")
+if sop1 and sop2 and sop3:
+    st.sidebar.success("✅ READY TO TRADE")
+else:
+    st.sidebar.warning("⚠️ STANDBY")
+
 st.sidebar.divider()
-balance = st.sidebar.number_input("Wallet ($)", value=1000)
-risk_p = st.sidebar.slider("Risk %", 1, 5, 1)
-lots = (balance * (risk_p/100)) / 50
-st.sidebar.metric("Suggested Lot Size", f"{lots:.2f}")
+st.sidebar.subheader("📉 RISK CALCULATOR")
+balance = st.sidebar.number_input("Balance ($)", value=1000)
+risk_p = st.sidebar.slider("Risk (%)", 1.0, 5.0, 1.0)
+sl_pts = st.sidebar.number_input("SL Points", value=50)
+lots = (balance * (risk_p/100)) / sl_pts
+st.sidebar.info(f"Suggested Lot: {lots:.2f}")
 
-# 3. Data Engine
-df = yf.download("^DJI", period="1d", interval=tf)
+# 3. Main Dashboard - Fix for the "Alignment Error"
+st.markdown('<div class="buy-mode">🛡️ PATRO AI PRO | INSTITUTIONAL TERMINAL</div>', unsafe_allow_html=True)
+
+# Fetching Data with a fix for the multi-index error
+df = yf.download("^DJI", period="1d", interval="1m", group_by='column')
 
 if not df.empty:
-    # Calculate Simple AI Indicators
-    df['SMA'] = df['Close'].rolling(window=10).mean()
-    # Buy Signal: Price crosses above SMA | Sell: Price crosses below SMA
-    df['Signal'] = 0
-    df.loc[df['Close'] > df['SMA'], 'Signal'] = 1
-    df.loc[df['Close'] < df['SMA'], 'Signal'] = -1
-
-    # --- THE CHARTING ENGINE ---
-    # Create 2 Rows: Row 1 for Price, Row 2 for Volume
-    fig = make_subplots(rows=2, cols=1, shared_xaxes=True, 
-                        vertical_spacing=0.05, row_heights=[0.7, 0.3])
-
-    # A. Add Candlesticks
-    fig.add_trace(go.Candlestick(x=df.index, open=df['Open'], high=df['High'], 
-                                 low=df['Low'], close=df['Close'], name="US30"), row=1, col=1)
-
-    # B. Add AI Baseline (Moving Average)
-    fig.add_trace(go.Scatter(x=df.index, y=df['SMA'], line=dict(color='orange', width=1), name="AI Baseline"), row=1, col=1)
-
-    # C. Add Buy/Sell Signal Arrows
-    # Buy Arrows (Green)
-    buys = df[df['Signal'] == 1]
-    fig.add_trace(go.Scatter(x=buys.index, y=buys['Low'] * 0.999, mode='markers',
-                             marker=dict(symbol='triangle-up', size=12, color='#00ff00'), name="BUY SIGNAL"), row=1, col=1)
+    # We grab the 'Close' column specifically to avoid the error
+    price = df['Close'].iloc[-1].item()
+    avg_p = df['Close'].mean().item()
+    hi = df['High'].max().item()
+    lo = df['Low'].min().item()
     
-    # Sell Arrows (Red)
-    sells = df[df['Signal'] == -1]
-    fig.add_trace(go.Scatter(x=sells.index, y=sells['High'] * 1.001, mode='markers',
-                             marker=dict(symbol='triangle-down', size=12, color='#ff0000'), name="SELL SIGNAL"), row=1, col=1)
-
-    # D. Add Volume Bars (Row 2)
-    colors = ['red' if row['Open'] > row['Close'] else 'green' for index, row in df.iterrows()]
-    fig.add_trace(go.Bar(x=df.index, y=df['Volume'], marker_color=colors, name="Volume"), row=2, col=1)
-
-    # Styling
-    fig.update_layout(template="plotly_dark", xaxis_rangeslider_visible=False, height=700,
-                      margin=dict(l=10, r=10, t=10, b=10))
+    # Trend Matrix Logic
+    trend = "UP" if price > avg_p else "DOWN"
     
+    # Display Metrics
+    c1, c2, c3 = st.columns(3)
+    c1.metric("US30 Price", f"${price:,.2f}")
+    c2.metric("Trend Matrix", f"1M: {trend}")
+    c3.metric("Daily Range", f"H: {hi:,.0f} | L: {lo:,.0f}")
+
+    # --- Institutional Chart ---
+    fig = go.Figure()
+    fig.add_trace(go.Scatter(x=df.index, y=df['Close'], name='US30', line=dict(color='#00ffcc', width=2)))
+    fig.add_trace(go.Scatter(x=df.index, y=[hi]*len(df), name='Resistance', line=dict(color='red', dash='dot')))
+    fig.add_trace(go.Scatter(x=df.index, y=[lo]*len(df), name='Support', line=dict(color='green', dash='dot')))
+    
+    fig.update_layout(template="plotly_dark", height=500, margin=dict(l=0, r=0, t=20, b=0), xaxis_rangeslider_visible=False)
     st.plotly_chart(fig, use_container_width=True)
-
-    # Institutional Metrics
-    col1, col2 = st.columns(2)
-    with col1:
-        if df['Signal'].iloc[-1] == 1:
-            st.success("💹 CURRENT MODE: BUY (Institutional Accumulation)")
-        else:
-            st.error("📉 CURRENT MODE: SELL (Institutional Distribution)")
+else:
+    st.error("Failed to fetch market data. Please check your internet connection or GitHub settings.")
