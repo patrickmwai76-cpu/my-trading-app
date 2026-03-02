@@ -1,12 +1,13 @@
 import streamlit as st
 import yfinance as yf
+import plotly.graph_objects as go
 import pandas as pd
-import time
-from lightweight_charts.widgets import StreamlitChart
 from streamlit_autorefresh import st_autorefresh
+from plotly.subplots import make_subplots
+import datetime
 
-# 1. SECURITY & CONFIG
-st.set_page_config(page_title="PATRO AI PRO | LIVE", layout="wide")
+# 1. AUTHENTICATION & CONFIG
+st.set_page_config(page_title="PATRO AI PRO", layout="wide")
 
 if 'auth' not in st.session_state:
     st.session_state['auth'] = False
@@ -15,13 +16,13 @@ if not st.session_state['auth']:
     st.title("🛡️ PATRO AI PRO | SECURE ACCESS")
     u = st.text_input("Username")
     p = st.text_input("Password", type="password")
-    if st.button("Unlock"):
+    if st.button("Unlock Terminal"):
         if u == "PATRO_ADMIN" and p == "patro666@":
             st.session_state['auth'] = True
             st.rerun()
     st.stop()
 
-# 2. SIDEBAR - RESTORED LAYOUT
+# 2. SIDEBAR - ALL FEATURES RESTORED
 st.sidebar.title("🛡️ TERMINAL CONTROL")
 tf = st.sidebar.radio("Timeframe", ["1m", "5m", "15m"], index=0, horizontal=True)
 
@@ -35,45 +36,57 @@ s4 = st.sidebar.checkbox("Risk Management set?")
 st.sidebar.divider()
 st.sidebar.subheader("📉 RISK MGMT")
 bal = st.sidebar.number_input("Wallet ($)", value=1000)
-st.sidebar.info(f"Lot Size: {(bal * 0.01) / 50:.2f}")
+risk = st.sidebar.slider("Risk %", 0.5, 5.0, 1.0)
+st.sidebar.info(f"Lot Size: {(bal * (risk/100)) / 50:.2f}")
 
 st.sidebar.divider()
 st.sidebar.subheader("📊 TREND MATRIX")
 st.sidebar.success("1M: UP | 5M: UP | 15M: UP")
 
-# 3. MAIN INTERFACE
-st.markdown('<div style="background: linear-gradient(90deg, #00c853, #b2ff59); padding: 15px; border-radius: 10px; color: black; text-align: center; font-weight: bold;">🛡️ PATRO AI PRO | INSTITUTIONAL TERMINAL v4.0</div>', unsafe_allow_html=True)
+# 3. HEADER & NEWS GUARD
+st.markdown('<div style="background: linear-gradient(90deg, #00c853, #b2ff59); padding: 15px; border-radius: 10px; color: black; text-align: center; font-weight: bold; font-size: 20px;">🛡️ PATRO AI PRO | INSTITUTIONAL TERMINAL v4.0</div>', unsafe_allow_html=True)
 
-st.write("🛡️ **NEWS GUARD ACTIVE**")
+st.write(f"🛡️ **NEWS GUARD ACTIVE** | Pulse: {datetime.datetime.now().strftime('%H:%M:%S')}")
 c1, c2 = st.columns(2)
 c1.info("Mon Mar 2 | ISM PMI (10:00 AM)")
 c2.error("Fri Mar 6 | NFP Jobs (08:30 AM)")
 
-# 4. LIVE STREAMING ENGINE
-# This creates the "MT5" moving candle effect
-chart = StreamlitChart(width=1100, height=550)
+# 4. LIVE DATA ENGINE (FAST REFRESH)
+st_autorefresh(interval=10000, key="live_pulse") # 10 seconds for "Live" feel
+df = yf.download("YM=F", period="1d", interval=tf, prepost=True)
 
-def get_data():
-    df = yf.download("YM=F", period="1d", interval=tf, prepost=True)
+if not df.empty:
     if isinstance(df.columns, pd.MultiIndex):
         df.columns = df.columns.get_level_values(0)
-    df.reset_index(inplace=True)
-    return df
+    
+    # INDICATORS
+    df['VWAP'] = (((df['High'] + df['Low'] + df['Close']) / 3) * df['Volume']).cumsum() / df['Volume'].cumsum()
+    df['SMA'] = df['Close'].rolling(20).mean()
+    change = df['Close'].diff()
+    gain = (change.where(change > 0, 0)).rolling(14).mean()
+    loss = (-change.where(change < 0, 0)).rolling(14).mean()
+    df['RSI'] = 100 - (100 / (1 + (gain / (loss + 1e-9))))
 
-# Initialize Data
-data = get_data()
-chart.set(data)
+    # 5. MULTI-LAYER CHART
+    fig = make_subplots(rows=3, cols=1, shared_xaxes=True, vertical_spacing=0.02, row_heights=[0.6, 0.1, 0.3])
+    
+    # Main: Candles + VWAP + SMA
+    fig.add_trace(go.Candlestick(x=df.index, open=df['Open'], high=df['High'], low=df['Low'], close=df['Close'], name='US30'), row=1, col=1)
+    fig.add_trace(go.Scatter(x=df.index, y=df['VWAP'], line=dict(color='cyan', width=2), name='VWAP'), row=1, col=1)
+    fig.add_trace(go.Scatter(x=df.index, y=df['SMA'], line=dict(color='orange', width=1), name='20 SMA'), row=1, col=1)
 
-# Indicators for the smooth chart
-chart.sma(period=20, color='orange')
+    # 6. SIGNALS (TRIPLE-FILTER)
+    for i in range(20, len(df)):
+        if (df['Close'].iloc[i] > df['SMA'].iloc[i] and df['Close'].iloc[i] > df['VWAP'].iloc[i] and df['RSI'].iloc[i] > 55):
+            if df['Close'].iloc[i-1] <= df['SMA'].iloc[i-1]:
+                fig.add_annotation(x=df.index[i], y=df['Low'].iloc[i], text="BUY", bgcolor="green", font=dict(color="white"), row=1, col=1)
+        elif (df['Close'].iloc[i] < df['SMA'].iloc[i] and df['Close'].iloc[i] < df['VWAP'].iloc[i] and df['RSI'].iloc[i] < 45):
+            if df['Close'].iloc[i-1] >= df['SMA'].iloc[i-1]:
+                fig.add_annotation(x=df.index[i], y=df['High'].iloc[i], text="SELL", bgcolor="red", font=dict(color="white"), row=1, col=1)
 
-# Display
-chart.load()
+    # Volume & RSI
+    fig.add_trace(go.Bar(x=df.index, y=df['Volume'], name='Vol', marker_color='gray'), row=2, col=1)
+    fig.add_trace(go.Scatter(x=df.index, y=df['RSI'], line=dict(color='purple'), name='RSI'), row=3, col=1)
 
-# 5. THE LIVE LOOP
-# This keeps the price flickering without refreshing the whole page
-while True:
-    new_tick = yf.download("YM=F", period="1d", interval=tf).tail(1)
-    if not new_tick.empty:
-        chart.update(new_tick.iloc[0])
-    time.sleep(2) # Checks every 2 seconds for a "tick"
+    fig.update_layout(template="plotly_dark", height=800, xaxis_rangeslider_visible=False)
+    st.plotly_chart(fig, use_container_width=True)
