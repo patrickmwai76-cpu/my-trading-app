@@ -67,14 +67,19 @@ if not df.empty:
     fig.add_trace(go.Scatter(x=df.index, y=df['VWAP'], line=dict(color='cyan', width=2), name='VWAP'), row=1, col=1)
     fig.add_trace(go.Scatter(x=df.index, y=df['SMA'], line=dict(color='orange', width=1), name='20 SMA'), row=1, col=1)
 
-    # 6. SIGNAL LOGIC RESTORED (Cross-Detection)
-    for i in range(15, len(df)):
-        # BUY: Price crosses above SMA
-        if df['Close'].iloc[i] > df['SMA'].iloc[i] and df['Close'].iloc[i-1] <= df['SMA'].iloc[i-1]:
-            fig.add_annotation(x=df.index[i], y=df['Low'].iloc[i], text="BUY", bgcolor="green", font=dict(color="white"), row=1, col=1)
-        # SELL: Price crosses below SMA
-        elif df['Close'].iloc[i] < df['SMA'].iloc[i] and df['Close'].iloc[i-1] >= df['SMA'].iloc[i-1]:
-            fig.add_annotation(x=df.index[i], y=df['High'].iloc[i], text="SELL", bgcolor="red", font=dict(color="white"), row=1, col=1)
+ // --- UPDATE BOTH FOR A STABLE BUILD ---
+
+// 1. Update the Buy Logic
+if buyCondition and barstate.isconfirmed
+    strategy.entry("Buy", strategy.long)
+
+// 2. Update the Sell Logic
+if sellCondition and barstate.isconfirmed
+    strategy.entry("Sell", strategy.short)
+
+// 3. Update the Visual Labels (the text on your screen)
+plotshape(buyCondition and barstate.isconfirmed, title="Buy Label", style=shape.labelup, color=color.green, location=location.belowbar, text="BUY")
+plotshape(sellCondition and barstate.isconfirmed, title="Sell Label", style=shape.labeldown, color=color.red, location=location.abovebar, text="SELL")
 
     # Layer 2: Volume
     fig.add_trace(go.Bar(x=df.index, y=df['Volume'], name='Volume', marker_color='gray'), row=2, col=1)
