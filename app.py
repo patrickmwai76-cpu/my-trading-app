@@ -1,42 +1,37 @@
 import streamlit as st
 import yfinance as yf
+import plotly.graph_objects as go
 import pandas as pd
-import time
-from lightweight_charts.widgets import StreamlitChart
+from streamlit_autorefresh import st_autorefresh
 
-# 1. Setup Live Chart (TradingView Style)
-st.set_page_config(layout="wide", page_title="PATRO AI PRO | LIVE")
+# 1. Page Config
+st.set_page_config(page_title="PATRO AI PRO | LIVE", layout="wide")
 
-# 2. Sidebar Timeframe Control
-st.sidebar.title("🛡️ LIVE TERMINAL")
-tf = st.sidebar.selectbox("Select Timeframe", ["1m", "2m", "5m"], index=0)
+# 2. FAST REFRESH (10 Seconds for "Live" feel)
+st_autorefresh(interval=10000, key="live_pulse")
 
-# 3. Initialize the Chart Object
-chart = StreamlitChart(width=1200, height=600)
+# 3. Sidebar
+st.sidebar.title("🛡️ TERMINAL CONTROL")
+tf = st.sidebar.radio("Timeframe", ["1m", "5m", "15m"], index=0, horizontal=True)
 
-# 4. Data Logic
-def get_live_data():
-    # Fetching YM=F (Futures) for real-time motion
-    df = yf.download("YM=F", period="1d", interval=tf, prepost=True)
+# 4. Fetch Live Futures (YM=F)
+df = yf.download("YM=F", period="1d", interval=tf, prepost=True)
+
+if not df.empty:
     if isinstance(df.columns, pd.MultiIndex):
         df.columns = df.columns.get_level_values(0)
-    df.reset_index(inplace=True)
-    return df
+    
+    # Live Indicator Update
+    df['SMA'] = df['Close'].rolling(20).mean()
+    
+    # 5. Live Charting
+    fig = go.Figure()
+    fig.add_trace(go.Candlestick(x=df.index, open=df['Open'], high=df['High'], low=df['Low'], close=df['Close'], name='US30'))
+    fig.add_trace(go.Scatter(x=df.index, y=df['SMA'], line=dict(color='orange', width=1), name='Trend'))
 
-# 5. The "Live Loop" (No Autorefresh needed)
-# This loop updates the chart every 1 second without reloading the page
-data = get_live_data()
-chart.set(data) # Load initial historical candles
-
-st.markdown('<div style="background: #00c853; padding: 10px; border-radius: 5px; color: black; text-align: center; font-weight: bold;">🛡️ US30 LIVE STREAMING ACTIVE</div>', unsafe_allow_html=True)
-
-# Display the chart once
-chart.load()
-
-# Update the "Current" candle in real-time
-while True:
-    new_data = yf.download("YM=F", period="1d", interval=tf).tail(1)
-    if not new_data.empty:
-        # Update the chart with the latest price tick
-        chart.update(new_data.iloc[0]) 
-    time.sleep(1) # Re-check every second for movement
+    fig.update_layout(template="plotly_dark", height=700, xaxis_rangeslider_visible=False)
+    
+    st.markdown(f"### 🟢 LIVE DATA STREAMING | Last Tick: {df.index[-1].strftime('%H:%M:%S')}")
+    st.plotly_chart(fig, use_container_width=True)
+else:
+    st.error("Waiting for Market Pulse...")
