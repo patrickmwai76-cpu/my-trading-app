@@ -2,5 +2,4 @@ streamlit
 yfinance
 pandas
 plotly
-streamlit-lightweight-charts
 streamlit-autorefresh
