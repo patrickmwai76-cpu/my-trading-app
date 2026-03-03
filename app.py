@@ -71,7 +71,41 @@ try:
         atr_sl = df['ATR'].iloc[-1] * 1.5 if not pd.isna(df['ATR'].iloc[-1]) else 1.5
         ping_url = "https://www.soundjay.com/buttons/sounds/button-3.mp3"
         signal_type = "NEUTRAL"
+# 1. Initialize the trade memory (put this at the very top of your script)
+if 'trade_lock' not in st.session_state:
+    st.session_state.trade_lock = None
 
+# 2. Logic for BOTH Buy and Sell
+ping_url = "https://www.soundjay.com/buttons/sounds/button-3.mp3"
+
+# --- SELL LOGIC ---
+if last_p < last_v and last_p < last_s and last_r < 45:
+    if st.session_state.trade_lock is None:
+        st.session_state.trade_lock = {"type": "SELL", "en": last_p, "sl": last_p + atr_sl, "tp": last_p - (atr_sl * 2)}
+        st.audio(ping_url, autoplay=True)
+    
+    # Use the LOCKED data
+    signal_type = "SELL"
+    en, sl, tp = st.session_state.trade_lock["en"], st.session_state.trade_lock["sl"], st.session_state.trade_lock["tp"]
+
+# --- BUY LOGIC ---
+elif last_p > last_v and last_p > last_s and last_r > 55:
+    if st.session_state.trade_lock is None:
+        st.session_state.trade_lock = {"type": "BUY", "en": last_p, "sl": last_p - atr_sl, "tp": last_p + (atr_sl * 2)}
+        st.audio(ping_url, autoplay=True)
+    
+    # Use the LOCKED data
+    signal_type = "BUY"
+    en, sl, tp = st.session_state.trade_lock["en"], st.session_state.trade_lock["sl"], st.session_state.trade_lock["tp"]
+
+# --- RESET LOGIC (Clears the lock when the trend changes) ---
+if st.session_state.trade_lock:
+    # If we are in a Sell but price goes above SMA, reset
+    if st.session_state.trade_lock["type"] == "SELL" and last_p > last_s:
+        st.session_state.trade_lock = None
+    # If we are in a Buy but price goes below SMA, reset
+    elif st.session_state.trade_lock["type"] == "BUY" and last_p < last_s:
+        st.session_state.trade_lock = None
         if last_p > last_v and last_p > last_s and last_r > 52:
             signal_type = "BUY"
             en, sl, tp = last_p, last_p - atr_sl, last_p + (atr_sl * 2)
