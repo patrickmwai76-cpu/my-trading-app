@@ -19,9 +19,26 @@ if not st.session_state['auth']:
     st.stop()
 
 # 2. SIDEBAR - ASSET & SOP
-st.sidebar.title("🛡️ CONTROL CENTER")
-asset_choice = st.sidebar.selectbox("🎯 TRADING ASSET", ["XAUUSD (GOLD)", "US30 (DOW JONES)"])
-ticker = "GC=F" if "GOLD" in asset_choice else "YM=F"
+# --- STEP 1: DEFINE THRESHOLD FIRST ---
+# This ensures the 'dist_threshold' is created before the app tries to use it
+asset_choice = st.sidebar.selectbox("Select Asset", ["XAUUSD (GOLD)", "US30 (DOW JONES)"])
+
+if asset_choice == "XAUUSD (GOLD)":
+    dist_threshold = 1.5  # Bank filter for Gold
+else:
+    dist_threshold = 5.0  # Pro filter for US30
+
+# --- STEP 2: PROFESSIONAL HEADER (PATRO AI PRO NAME) ---
+st.markdown(f"""
+    <div style="background-color: #1e1e1e; padding: 20px; border-radius: 10px; border-bottom: 4px solid #f39c12;">
+        <h1 style="color: white; margin: 0;">PATRO AI PRO V8.0 <span style="font-size: 15px; color: #00ff00;">● LIVE</span></h1>
+        <p style="color: #bdc3c7; margin: 0;">Institutional Terminal | Asset: {asset_choice}</p>
+    </div>
+""", unsafe_allow_html=True)
+
+# --- STEP 3: STRICT MODE INDICATOR ---
+# This was the line causing the crash - now it is fixed!
+st.info(f"🛡️ STRICT MODE ACTIVE: Using {dist_threshold} point filter for {asset_choice}")
 
 tf = st.sidebar.radio("Timeframe", ["1m", "5m", "15m"], index=0, horizontal=True)
 st.sidebar.divider()
