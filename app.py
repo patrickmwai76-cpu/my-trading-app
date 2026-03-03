@@ -78,12 +78,12 @@ try:
         last_rsi = df['RSI'].iloc[-1]
         atr_val = df['ATR'].iloc[-1] if not pd.isna(df['ATR'].iloc[-1]) else 1.5
         
-        # Institutional Filters
+        # Multi-Filter Institutional Logic
         is_uptrend = last_price > last_vwap and last_price > last_sma
         is_downtrend = last_price < last_vwap and last_price < last_sma
         
         sl_dist = atr_val * 1.5
-        tp_dist = sl_dist * 2.5  # Increased to 2.5 for better Gold profit runs
+        tp_dist = sl_dist * 2.5 
 
         signal_type = "NEUTRAL"
         if is_uptrend and last_rsi > 55:
@@ -95,37 +95,45 @@ try:
             entry_price, stop_loss, take_profit = last_price, last_price + sl_dist, last_price - tp_dist
             st.error(f"📉 **INSTITUTIONAL SELL** | Entry: {entry_price:.2f} | SL: {stop_loss:.2f} | TP: {take_profit:.2f}")
         else:
-            st.warning("⚠️ **WAITING FOR CONFLUENCE** | Avoiding Fake Retail Moves")
+            st.warning("⚠️ **WAITING FOR CONFLUENCE** | Filtering Retail Noise")
 
         # --- 6. CHARTING ---
         fig = make_subplots(rows=3, cols=1, shared_xaxes=True, vertical_spacing=0.04, row_heights=[0.5, 0.2, 0.3])
         
-        # Candle Chart
+        # 6.1 Candle Chart
         fig.add_trace(go.Candlestick(x=df.index, open=df['Open'], high=df['High'], low=df['Low'], close=df['Close'], name=asset_choice), row=1, col=1)
         
-        # Institutional Lines (VWAP & SMA)
+        # 6.2 Institutional Lines
         fig.add_trace(go.Scatter(x=df.index, y=df['VWAP'], line=dict(color='cyan', width=2), name='Inst. VWAP'), row=1, col=1)
         fig.add_trace(go.Scatter(x=df.index, y=df['SMA'], line=dict(color='orange', width=1.5), name='Trend SMA'), row=1, col=1)
 
+        # 6.3 Real Signal Markers (Always Syncs with Label)
         if signal_type != "NEUTRAL":
-            # Real Triangle Marker on Candle
-            m_y = df['Low'].iloc[-1]*0.999 if signal_type == "BUY" else df['High'].iloc[-1]*1.001
+            m_y = df['Low'].iloc[-1] * 0.999 if signal_type == "BUY" else df['High'].iloc[-1] * 1.001
             m_sym = "triangle-up" if signal_type == "BUY" else "triangle-down"
             m_col = "lime" if signal_type == "BUY" else "red"
             
-            fig.add_trace(go.Scatter(x=[df.index[-1]], y=[m_y], mode="markers", 
-                                     marker=dict(symbol=m_sym, size=18, color=m_col), name="INSTITUTIONAL SIGNAL"), row=1, col=1)
+            # Place Marker on THE CURRENT CANDLE
+            fig.add_trace(go.Scatter(
+                x=[df.index[-1]], 
+                y=[m_y], 
+                mode="markers+text", 
+                text=[f"{signal_type} SIGNAL"],
+                textposition="bottom center" if signal_type == "BUY" else "top center",
+                marker=dict(symbol=m_sym, size=18, color=m_col, line=dict(width=2, color='white')),
+                name="SIGNAL TRIGGER"
+            ), row=1, col=1)
             
-            # Risk Lines
+            # 6.4 Risk Management Lines
             fig.add_hline(y=entry_price, line_dash="dot", line_color="white", annotation_text="ENTRY", row=1, col=1)
             fig.add_hline(y=stop_loss, line_dash="dash", line_color="red", annotation_text="STOP LOSS", row=1, col=1)
             fig.add_hline(y=take_profit, line_dash="dash", line_color="lime", annotation_text="TAKE PROFIT", row=1, col=1)
 
-        # Volume & RSI
+        # 6.5 Volume & RSI
         fig.add_trace(go.Bar(x=df.index, y=df['Volume'], name='Volume', marker_color='#444444'), row=2, col=1)
         fig.add_trace(go.Scatter(x=df.index, y=df['RSI'], line=dict(color='purple', width=2), name='RSI'), row=3, col=1)
         
-        fig.update_layout(template="plotly_dark", height=800, xaxis_rangeslider_visible=False, margin=dict(l=10, r=10, t=10, b=10))
+        fig.update_layout(template="plotly_dark", height=850, xaxis_rangeslider_visible=False, margin=dict(l=10, r=10, t=10, b=10))
         st.plotly_chart(fig, use_container_width=True)
 
     else:
