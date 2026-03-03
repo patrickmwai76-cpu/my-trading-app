@@ -86,12 +86,41 @@ try:
             st.error(f"📉 **INSTITUTIONAL SELL** | Entry: {en:.2f} | SL: {sl:.2f} | TP: {tp:.2f}")
         else:
             st.info("🔵 SCANNING: Waiting for Institutional Confluence...")
-
-        # 6. CHARTING ENGINE
+# --- 6. CHARTING ENGINE (The Final Visuals) ---
         fig = make_subplots(rows=3, cols=1, shared_xaxes=True, vertical_spacing=0.04, row_heights=[0.5, 0.2, 0.3])
         fig.add_trace(go.Candlestick(x=df.index, open=df['Open'], high=df['High'], low=df['Low'], close=df['Close'], name="Price"), row=1, col=1)
         fig.add_trace(go.Scatter(x=df.index, y=df['VWAP'], line=dict(color='cyan', width=2), name='VWAP'), row=1, col=1)
         fig.add_trace(go.Scatter(x=df.index, y=df['SMA'], line=dict(color='orange', width=1.5), name='SMA 20'), row=1, col=1)
+
+        if signal_type != "NEUTRAL":
+            m_y = df['Low'].iloc[-1]*0.998 if signal_type=="BUY" else df['High'].iloc[-1]*1.002
+            m_sym = "triangle-up" if signal_type=="BUY" else "triangle-down"
+            m_color = "lime" if signal_type=="BUY" else "red"
+            m_text = f"<b>{signal_type}</b>" # Words: BUY or SELL
+            m_pos = "bottom center" if signal_type=="BUY" else "top center"
+
+            # 1. ADD THE TRIANGLE + WORD
+            fig.add_trace(go.Scatter(
+                x=[df.index[-1]], y=[m_y], 
+                mode="markers+text", 
+                text=[m_text], 
+                textposition=m_pos,
+                textfont=dict(size=14, color="white"),
+                marker=dict(symbol=m_sym, size=22, color=m_color), 
+                showlegend=False
+            ), row=1, col=1)
+
+            # 2. ADD THE STOP LOSS & TAKE PROFIT LINES
+            fig.add_hline(y=sl, line_dash="dash", line_color="red", 
+                          annotation_text=f"STOP LOSS: {sl:.2f}", 
+                          annotation_position="right", row=1, col=1)
+            
+            fig.add_hline(y=tp, line_dash="dash", line_color="lime", 
+                          annotation_text=f"TAKE PROFIT: {tp:.2f}", 
+                          annotation_position="right", row=1, col=1)
+            
+            fig.add_hline(y=en, line_dash="dot", line_color="white", 
+                          annotation_text="ENTRY", annotation_position="left", row=1, col=1)
 
         if signal_type != "NEUTRAL":
             m_y = df['Low'].iloc[-1]*0.999 if signal_type=="BUY" else df['High'].iloc[-1]*1.001
