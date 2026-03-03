@@ -7,7 +7,7 @@ from plotly.subplots import make_subplots
 import datetime
 import numpy as np
 
-# 1. SECURITY & CONFIG
+# 1. SECURITY & CONFIG (STRICT ACCESS)
 st.set_page_config(page_title="PATRO AI PRO V8.0", layout="wide")
 if 'auth' not in st.session_state: st.session_state['auth'] = False
 if not st.session_state['auth']:
@@ -19,7 +19,7 @@ if not st.session_state['auth']:
             st.rerun()
     st.stop()
 
-# 2. ASSET SELECTION
+# 2. ASSET SELECTION & TICKER SETUP
 asset_choice = st.sidebar.selectbox("Select Asset", ["XAUUSD (GOLD)", "US30 (DOW JONES)"])
 ticker = "GC=F" if asset_choice == "XAUUSD (GOLD)" else "^DJI"
 dist_threshold = 1.5 if asset_choice == "XAUUSD (GOLD)" else 5.0
@@ -36,10 +36,10 @@ tf = st.sidebar.radio("Timeframe", ["1m", "5m", "15m"], index=0, horizontal=True
 st.sidebar.divider()
 st.sidebar.subheader("📋 INSTITUTIONAL SOP")
 st.sidebar.checkbox("Trend Matrix Confluence?", value=True)
-st.sidebar.checkbox("Price near VWAP (Strike Zone)?", value=True)
+st.sidebar.checkbox("Price Action near VWAP?", value=True)
 st.sidebar.checkbox("Volume Confirmation?", value=True)
 
-# 4. NEWS GUARD ENGINE
+# 4. NEWS GUARD ENGINE (March 3, 2026)
 now_eat = datetime.datetime.now()
 news_events = [{"name": "🇺🇸 ISM Manufacturing PMI", "time": datetime.time(18, 00)}]
 for event in news_events:
@@ -54,7 +54,8 @@ st_autorefresh(interval=10000, key="v8_master_pulse")
 try:
     df = yf.download(ticker, period="1d", interval=tf)
     if not df.empty:
-        if isinstance(df.columns, pd.MultiIndex): df.columns = df.columns.get_level_values(0)
+        if isinstance(df.columns, pd.MultiIndex): 
+            df.columns = df.columns.get_level_values(0)
         
         # INDICATORS
         df['VWAP'] = (((df['High'] + df['Low'] + df['Close']) / 3) * df['Volume']).cumsum() / df['Volume'].cumsum()
@@ -65,34 +66,39 @@ try:
         df['RSI'] = 100 - (100 / (1 + (gain / (loss + 1e-9))))
         df['ATR'] = (df['High'] - df['Low']).rolling(14).mean()
 
-        # SIGNAL LOGIC
+        # SIGNAL & RISK LOGIC (Includes Audio)
         last_p, last_v, last_s, last_r = df['Close'].iloc[-1], df['VWAP'].iloc[-1], df['SMA'].iloc[-1], df['RSI'].iloc[-1]
-        atr_sl = df['ATR'].iloc[-1] * 1.5
+        atr_sl = df['ATR'].iloc[-1] * 1.5 if not pd.isna(df['ATR'].iloc[-1]) else 1.5
+        ping_url = "https://www.soundjay.com/buttons/sounds/button-3.mp3"
         signal_type = "NEUTRAL"
 
-        if last_p > last_v and last_p > last_s and last_r > 55:
+        if last_p > last_v and last_p > last_s and last_r > 52:
             signal_type = "BUY"
             en, sl, tp = last_p, last_p - atr_sl, last_p + (atr_sl * 2)
+            st.audio(ping_url, format="audio/mp3", autoplay=True)
+            st.toast("🚀 BUY SIGNAL DETECTED!", icon="💰")
             st.success(f"🚀 **INSTITUTIONAL BUY** | Entry: {en:.2f} | SL: {sl:.2f} | TP: {tp:.2f}")
-        elif last_p < last_v and last_p < last_s and last_r < 45:
+        elif last_p < last_v and last_p < last_s and last_r < 48:
             signal_type = "SELL"
             en, sl, tp = last_p, last_p + atr_sl, last_p - (atr_sl * 2)
+            st.audio(ping_url, format="audio/mp3", autoplay=True)
+            st.toast("📉 SELL SIGNAL DETECTED!", icon="🚨")
             st.error(f"📉 **INSTITUTIONAL SELL** | Entry: {en:.2f} | SL: {sl:.2f} | TP: {tp:.2f}")
         else:
-            st.info("🔵 SCANNING: Waiting for SOP Confluence...")
+            st.info("🔵 SCANNING: Waiting for Institutional Confluence...")
 
-        # 6. CHARTING (ALL FEATURES)
+        # 6. CHARTING ENGINE
         fig = make_subplots(rows=3, cols=1, shared_xaxes=True, vertical_spacing=0.04, row_heights=[0.5, 0.2, 0.3])
         fig.add_trace(go.Candlestick(x=df.index, open=df['Open'], high=df['High'], low=df['Low'], close=df['Close'], name="Price"), row=1, col=1)
         fig.add_trace(go.Scatter(x=df.index, y=df['VWAP'], line=dict(color='cyan', width=2), name='VWAP'), row=1, col=1)
         fig.add_trace(go.Scatter(x=df.index, y=df['SMA'], line=dict(color='orange', width=1.5), name='SMA 20'), row=1, col=1)
 
         if signal_type != "NEUTRAL":
-            # Candle Markers
-            m_y = df['Low'].iloc[-1] * 0.999 if signal_type == "BUY" else df['High'].iloc[-1] * 1.001
-            m_sym = "triangle-up" if signal_type == "BUY" else "triangle-down"
-            fig.add_trace(go.Scatter(x=[df.index[-1]], y=[m_y], mode="markers", marker=dict(symbol=m_sym, size=15, color="lime" if signal_type=="BUY" else "red"), name="SIGNAL"), row=1, col=1)
-            # SL, TP, Entry Lines
+            m_y = df['Low'].iloc[-1]*0.999 if signal_type=="BUY" else df['High'].iloc[-1]*1.001
+            m_sym = "triangle-up" if signal_type=="BUY" else "triangle-down"
+            # Signal Marker
+            fig.add_trace(go.Scatter(x=[df.index[-1]], y=[m_y], mode="markers", marker=dict(symbol=m_sym, size=20, color="lime" if signal_type=="BUY" else "red"), name="SIGNAL"), row=1, col=1)
+            # Risk Lines
             fig.add_hline(y=en, line_dash="dot", line_color="white", annotation_text="ENTRY", row=1, col=1)
             fig.add_hline(y=sl, line_dash="dash", line_color="red", annotation_text="STOP LOSS", row=1, col=1)
             fig.add_hline(y=tp, line_dash="dash", line_color="lime", annotation_text="TAKE PROFIT", row=1, col=1)
