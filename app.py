@@ -26,7 +26,6 @@ with st.sidebar:
     st.divider()
     
     st.subheader("📋 INSTITUTIONAL SOP")
-    # Your requested checklist
     sop_trend = st.checkbox("Trend Matrix Confluence", value=True)
     sop_vwap = st.checkbox("Price Action near VWAP", value=True)
     sop_vol = st.checkbox("Volume Confirmation", value=True)
@@ -47,43 +46,4 @@ st_autorefresh(interval=10000, key="v8_sop_pulse")
 try:
     df = yf.download(ticker, period="1d", interval=tf)
     if not df.empty:
-        if isinstance(df.columns, pd.MultiIndex): df.columns = df.columns.get_level_values(0)
-        
-        # Indicators
-        df['VWAP'] = (((df['High'] + df['Low'] + df['Close']) / 3) * df['Volume']).cumsum() / df['Volume'].cumsum()
-        df['SMA'] = df['Close'].rolling(20).mean()
-        delta = df['Close'].diff(); gain = (delta.where(delta > 0, 0)).rolling(14).mean(); loss = (-delta.where(delta < 0, 0)).rolling(14).mean()
-        df['RSI'] = 100 - (100 / (1 + (gain / (loss + 1e-9))))
-        df['ATR'] = (df['High'] - df['Low']).rolling(14).mean()
-
-        last_p, last_v, last_s, last_r = df['Close'].iloc[-1], df['VWAP'].iloc[-1], df['SMA'].iloc[-1], df['RSI'].iloc[-1]
-        atr_val = df['ATR'].iloc[-1] if not pd.isna(df['ATR'].iloc[-1]) else 1.5
-
-        # 5. SOP-GATED SIGNAL LOGIC
-        # Signals only trigger if SOP checkboxes are TRUE
-        if st.session_state.trade_lock is None and sop_trend and sop_vwap and sop_vol:
-            if last_p < last_v and last_p < last_s and last_r < 45:
-                st.session_state.trade_lock = {"type": "SELL", "en": last_p, "sl": last_p + (atr_val*1.5), "tp": last_p - (atr_val*3)}
-                st.toast("🚨 SOP CONFIRMED: SELL SIGNAL")
-            elif last_p > last_v and last_p > last_s and last_r > 55:
-                st.session_state.trade_lock = {"type": "BUY", "en": last_p, "sl": last_p - (atr_val*1.5), "tp": last_p + (atr_val*3)}
-                st.toast("💰 SOP CONFIRMED: BUY SIGNAL")
-
-        # 6. MAIN DISPLAY
-        st.header(f"📊 {asset_choice} Terminal")
-        if st.session_state.trade_lock:
-            t = st.session_state.trade_lock
-            st.error(f"LOCKED {t['type']} | Entry: {t['en']:.2f} | SL: {t['sl']:.2f} | TP: {t['tp']:.2f}")
-            
-            fig = make_subplots(rows=1, cols=1)
-            fig.add_trace(go.Candlestick(x=df.index, open=df['Open'], high=df['High'], low=df['Low'], close=df['Close']))
-            fig.add_hline(y=t['en'], line_dash="dot", line_color="white", annotation_text="ENTRY")
-            fig.add_hline(y=t['sl'], line_dash="dash", line_color="red", annotation_text="STOP LOSS")
-            fig.add_hline(y=t['tp'], line_dash="dash", line_color="lime", annotation_text="TAKE PROFIT")
-            fig.update_layout(template="plotly_dark", height=600, xaxis_rangeslider_visible=False)
-            st.plotly_chart(fig, use_container_width=True)
-        else:
-            st.info("🔍 SOP CHECK: Please confirm Trend, VWAP, and Volume in Sidebar to enable signals.")
-
-except Exception as e:
-    st.error(f"Waiting for live feed... {e}")
+        if isinstance(df.columns, pd.MultiIndex): df
