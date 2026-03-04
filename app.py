@@ -59,14 +59,15 @@ with st.sidebar:
         st.session_state.trade_lock = None
         st.rerun()
 
-# 4. DATA ENGINE (ERROR-PROOF)
+# 4. DATA ENGINE (MODERNIZED & ERROR-PROOF)
 ticker = "GC=F" if asset_choice == "XAUUSD (GOLD)" else "^DJI"
 st_autorefresh(interval=10000, key="v8_sop_pulse")
 
 try:
-    df = yf.download(ticker, period="1d", interval=tf)
+    # Changed to 5d to prevent SMA/ADX errors on higher timeframes
+    df = yf.download(ticker, period="5d", interval=tf)
     
-    if df.empty or len(df) < 20:
+    if df.empty or len(df) < 30:
         st.warning("📡 SYNCING... Market data is currently heavy. Use 'FORCE DATA SYNC' if stuck.")
         st.stop()
 
@@ -102,16 +103,15 @@ try:
     # --- SAFE POWER METER (NaN FIX) ---
     with st.sidebar:
         st.divider()
-        # SAFE MATH: If ADX is NaN, use 0.0 to prevent black screen
-        adx_val = last['ADX'] if not pd.isna(last['ADX']) else 0.0
-        prev_adx_val = prev['ADX'] if not pd.isna(prev['ADX']) else 0.0
+        adx_val = float(last['ADX']) if not pd.isna(last['ADX']) else 0.0
+        prev_adx_val = float(prev['ADX']) if not pd.isna(prev['ADX']) else 0.0
         
         arrow = "▲" if adx_val > prev_adx_val else "▼"
         color = "green" if adx_val > prev_adx_val else "red"
         
         st.markdown(f"### ⚡ POWER: {adx_val:.1f}% :{color}[{arrow}]")
-        # SAFE PROGRESS: Must be float between 0.0 and 1.0
-        safe_progress = float(min(max(adx_val / 100, 0.0), 1.0))
+        # SAFE PROGRESS: Ensuring value is within [0.0, 1.0]
+        safe_progress = min(max(adx_val / 100.0, 0.0), 1.0)
         st.progress(safe_progress)
 
     # 5. SIGNAL LOGIC
@@ -152,7 +152,7 @@ try:
 
     fig.update_layout(template="plotly_dark", height=800, xaxis_rangeslider_visible=False, showlegend=False)
     
-    # NEW FIX: Replaced use_container_width with standard width logic to avoid terminal errors
+    # Final check for container width
     st.plotly_chart(fig, use_container_width=True)
 
 except Exception as e:
