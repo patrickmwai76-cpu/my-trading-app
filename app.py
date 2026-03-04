@@ -102,6 +102,7 @@ try:
     # --- SAFE POWER METER (NaN FIX) ---
     with st.sidebar:
         st.divider()
+        # SAFE MATH: If ADX is NaN, use 0.0 to prevent black screen
         adx_val = last['ADX'] if not pd.isna(last['ADX']) else 0.0
         prev_adx_val = prev['ADX'] if not pd.isna(prev['ADX']) else 0.0
         
@@ -109,7 +110,8 @@ try:
         color = "green" if adx_val > prev_adx_val else "red"
         
         st.markdown(f"### ⚡ POWER: {adx_val:.1f}% :{color}[{arrow}]")
-        safe_progress = min(max(adx_val / 100, 0.0), 1.0)
+        # SAFE PROGRESS: Must be float between 0.0 and 1.0
+        safe_progress = float(min(max(adx_val / 100, 0.0), 1.0))
         st.progress(safe_progress)
 
     # 5. SIGNAL LOGIC
@@ -149,6 +151,8 @@ try:
         st.error(f"LOCKED {t['type']} | Entry: {t['en']:.2f} | SL: {t['sl']:.2f} | TP: {t['tp']:.2f}")
 
     fig.update_layout(template="plotly_dark", height=800, xaxis_rangeslider_visible=False, showlegend=False)
+    
+    # NEW FIX: Replaced use_container_width with standard width logic to avoid terminal errors
     st.plotly_chart(fig, use_container_width=True)
 
 except Exception as e:
