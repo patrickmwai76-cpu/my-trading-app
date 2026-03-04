@@ -6,9 +6,31 @@ from plotly.subplots import make_subplots
 import yfinance as yf
 
 # 1. SYSTEM SETUP
-st.set_page_config(page_title="PATRO AI PRO V8.9", layout="wide")
+st.set_page_config(page_title="PATRO AI PRO V8.9.5", layout="wide")
 
-# 2. SIDEBAR - ALL FEATURES SQUEEZED
+# 2. BULLETPROOF DATA ENGINE (UPGRADED FOR MTF)
+@st.cache_data(ttl=30)
+def get_clean_data(ticker, interval):
+    df = yf.download(ticker, period="1d", interval=interval, progress=False)
+    if df.empty or len(df) < 35:
+        return None
+    if isinstance(df.columns, pd.MultiIndex):
+        df.columns = df.columns.get_level_values(0)
+    
+    # Core Indicators
+    df['SMA'] = ta.sma(df['Close'], length=20)
+    df['VWAP'] = ta.vwap(df['High'], df['Low'], df['Close'], df['Volume'])
+    macd = ta.macd(df['Close'])
+    if macd is not None:
+        df['MACD_L'], df['MACD_H'], df['MACD_S'] = macd.iloc[:, 0], macd.iloc[:, 1], macd.iloc[:, 2]
+    
+    adx = ta.adx(df['High'], df['Low'], df['Close'], length=14)
+    if adx is not None:
+        df['ADX_P'] = adx.iloc[:, 0]
+    
+    return df.dropna()
+
+# 3. SIDEBAR - MASTER CONTROL & MTF SCANNER
 with st.sidebar:
     st.title("🌌 PATRO CONTROL")
     news_mode = st.toggle("ACTIVATE NEWS GUARD", value=True)
@@ -24,78 +46,84 @@ with st.sidebar:
     sop_macd = st.checkbox("MACD Momentum Guard", value=True)
     
     st.divider()
+    asset_map = {"XAUUSD (GOLD)": "GC=F", "US30 (DOW JONES)": "^DJI"}
+    asset_label = st.selectbox("Asset", list(asset_map.keys()))
+    ticker = asset_map[asset_label]
+    
+    st.divider()
     st.markdown("### ⚙️ VISUALS")
     show_analysis = st.toggle("Show MACD Analysis Row", value=True)
     
     st.divider()
-    asset_map = {"XAUUSD (GOLD)": "GC=F", "US30 (DOW JONES)": "^DJI"}
-    asset_label = st.selectbox("Asset", list(asset_map.keys()))
-    tf = st.radio("Timeframe", ["1m", "5m", "15m"], horizontal=True, index=1)
+    st.markdown("### ⏲️ MASTER TIMEFRAME")
+    selected_tf = st.radio("Display Chart", ["1m", "5m", "15m"], index=0, horizontal=True)
 
-# 3. BULLETPROOF DATA ENGINE
-@st.cache_data(ttl=30)
-def get_clean_data(ticker, interval):
-    df = yf.download(ticker, period="1d", interval=interval)
-    if df.empty or len(df) < 35: # Safety check for indicator length
-        return None
-        
-    if isinstance(df.columns, pd.MultiIndex):
-        df.columns = df.columns.get_level_values(0)
-    
-    # Calculate Indicators safely
-    df['SMA'] = ta.sma(df['Close'], length=20)
-    df['VWAP'] = ta.vwap(df['High'], df['Low'], df['Close'], df['Volume'])
-    
-    # SMART MACD: Using position-based mapping to avoid KeyError
-    macd = ta.macd(df['Close'], fast=12, slow=26, signal=9)
-    if macd is not None:
-        df['MACD_L'] = macd.iloc[:, 0]
-        df['MACD_H'] = macd.iloc[:, 1]
-        df['MACD_S'] = macd.iloc[:, 2]
-    
-    # SMART POWER: ADX calculation
-    adx = ta.adx(df['High'], df['Low'], df['Close'], length=14)
-    if adx is not None:
-        df['ADX_P'] = adx.iloc[:, 0]
-    
-    return df.dropna()
+# 4. BACKGROUND CONFLUENCE SCANNER
+def check_trend(df):
+    if df is None: return 0
+    last = df.iloc[-1]
+    # Bullish if above VWAP and MACD Hist is positive
+    if last['Close'] > last['VWAP'] and last['MACD_H'] > 0: return 1
+    # Bearish if below VWAP and MACD Hist is negative
+    if last['Close'] < last['VWAP'] and last['MACD_H'] < 0: return -1
+    return 0
 
-df = get_clean_data(asset_map[asset_label], tf)
+# Fetch all data for confluence
+df1 = get_clean_data(ticker, "1m")
+df5 = get_clean_data(ticker, "5m")
+df15 = get_clean_data(ticker, "15m")
 
-if df is not None:
-    last, prev = df.iloc[-1], df.iloc[-2]
+t1, t5, t15 = check_trend(df1), check_trend(df5), check_trend(df15)
+total_confluence = t1 + t5 + t15
 
-    # POWER METER (SIDEBAR)
+# Signal Logic
+if total_confluence == 3:
+    signal_text, signal_clr = "🔥 STRONG BUY DETECTED", "green"
+elif total_confluence == -3:
+    signal_text, signal_clr = "📉 STRONG SELL DETECTED", "red"
+else:
+    signal_text, signal_clr = "⚖️ NEUTRAL / WAITING", "gray"
+
+# 5. MAIN DASHBOARD
+st.markdown(f"<h1 style='text-align: center; color: {signal_clr};'>{signal_text}</h1>", unsafe_allow_html=True)
+
+# Select the active data for the chart
+active_df = {"1m": df1, "5m": df5, "15m": df15}[selected_tf]
+
+if active_df is not None:
+    last, prev = active_df.iloc[-1], active_df.iloc[-2]
+
+    # UPDATE SIDEBAR POWER METER
     with st.sidebar:
         st.divider()
+        st.markdown(f"### 🔍 MTF STATUS")
+        st.write(f"1M: {'🟢' if t1==1 else '🔴' if t1==-1 else '⚪'}")
+        st.write(f"5M: {'🟢' if t5==1 else '🔴' if t5==-1 else '⚪'}")
+        st.write(f"15M: {'🟢' if t15==1 else '🔴' if t15==-1 else '⚪'}")
+        
+        st.divider()
         arrow = "▲" if last['ADX_P'] > prev['ADX_P'] else "▼"
-        color = "green" if arrow == "▲" else "red"
-        st.markdown(f"### ⚡ POWER: {last['ADX_P']:.1f}% <span style='color:{color}'>{arrow}</span>", unsafe_allow_html=True)
+        st.markdown(f"### ⚡ {selected_tf} POWER: {last['ADX_P']:.1f}% {arrow}")
         st.progress(min(max(last['ADX_P'] / 100, 0.0), 1.0))
 
-    # 4. TRIPLE-STACK CHART (Price -> Volume -> MACD)
+    # CHARTING
     rows = 3 if show_analysis else 1
     heights = [0.5, 0.2, 0.3] if show_analysis else [1.0]
     fig = make_subplots(rows=rows, cols=1, shared_xaxes=True, vertical_spacing=0.03, row_heights=heights)
 
-    # TOP: PRICE
-    fig.add_trace(go.Candlestick(x=df.index, open=df['Open'], high=df['High'], low=df['Low'], close=df['Close'], name="Price"), row=1, col=1)
-    fig.add_trace(go.Scatter(x=df.index, y=df['VWAP'], line=dict(color='orange', width=2), name="VWAP"), row=1, col=1)
-    fig.add_trace(go.Scatter(x=df.index, y=df['SMA'], line=dict(color='cyan', width=1), name="SMA 20"), row=1, col=1)
+    fig.add_trace(go.Candlestick(x=active_df.index, open=active_df['Open'], high=active_df['High'], low=active_df['Low'], close=active_df['Close'], name="Price"), row=1, col=1)
+    fig.add_trace(go.Scatter(x=active_df.index, y=active_df['VWAP'], line=dict(color='orange', width=2), name="VWAP"), row=1, col=1)
+    fig.add_trace(go.Scatter(x=active_df.index, y=active_df['SMA'], line=dict(color='cyan', width=1), name="SMA 20"), row=1, col=1)
 
     if show_analysis:
-        # MIDDLE: VOLUME
-        v_colors = ['#26A69A' if df['Close'][i] >= df['Open'][i] else '#EF5350' for i in range(len(df))]
-        fig.add_trace(go.Bar(x=df.index, y=df['Volume'], name="Volume", marker_color=v_colors), row=2, col=1)
+        v_colors = ['#26A69A' if active_df['Close'][i] >= active_df['Open'][i] else '#EF5350' for i in range(len(active_df))]
+        fig.add_trace(go.Bar(x=active_df.index, y=active_df['Volume'], name="Volume", marker_color=v_colors), row=2, col=1)
+        h_colors = ['#26A69A' if val > 0 else '#EF5350' for val in active_df['MACD_H']]
+        fig.add_trace(go.Bar(x=active_df.index, y=active_df['MACD_H'], name="Hist", marker_color=h_colors), row=3, col=1)
+        fig.add_trace(go.Scatter(x=active_df.index, y=active_df['MACD_L'], line=dict(color='#2962FF'), name="MACD"), row=3, col=1)
+        fig.add_trace(go.Scatter(x=active_df.index, y=active_df['MACD_S'], line=dict(color='#FF6D00'), name="Signal"), row=3, col=1)
 
-        # BOTTOM: MACD HISTOGRAM
-        h_colors = ['#26A69A' if val > 0 else '#EF5350' for val in df['MACD_H']]
-        fig.add_trace(go.Bar(x=df.index, y=df['MACD_H'], name="Hist", marker_color=h_colors), row=3, col=1)
-        fig.add_trace(go.Scatter(x=df.index, y=df['MACD_L'], line=dict(color='#2962FF'), name="MACD"), row=3, col=1)
-        fig.add_trace(go.Scatter(x=df.index, y=df['MACD_S'], line=dict(color='#FF6D00'), name="Signal"), row=3, col=1)
-
-    fig.update_layout(height=850 if show_analysis else 600, template="plotly_dark", xaxis_rangeslider_visible=False, showlegend=False)
+    fig.update_layout(height=850, template="plotly_dark", xaxis_rangeslider_visible=False, showlegend=False)
     st.plotly_chart(fig, use_container_width=True)
-
 else:
-    st.warning("⏳ WAITING FOR MARKET DATA... (Need at least 35 bars to start PATRO AI)")
+    st.warning("⏳ SYNCING ALL TIMEFRAMES... PLEASE WAIT.")
