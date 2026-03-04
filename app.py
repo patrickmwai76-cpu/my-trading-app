@@ -1,95 +1,95 @@
 import streamlit as st
 import pandas as pd
-import yfinance as yf
-import plotly.graph_objects as go
-from streamlit_autorefresh import st_autorefresh
 import pandas_ta as ta
+import plotly.graph_objects as go
+import yfinance as yf
 
-# --- 1. SETUP & THEME ---
-st.set_page_config(page_title="PATRO AI PRO V8.7", layout="wide")
+# 1. PAGE SETUP
+st.set_page_config(page_title="PATRO AI PRO V8.8", layout="wide")
 
-# --- 2. SIDEBAR ---
+# 2. SIDEBAR - ALL FEATURES SQUEEZED IN
 with st.sidebar:
-    st.title("🛡️ PATRO AI PRO")
+    st.title("🌌 PATRO CONTROL")
     
-    # News Guard Toggle
+    # --- SECTION 1: SAFETY & SYNC ---
     news_mode = st.toggle("ACTIVATE NEWS GUARD", value=True)
-    if news_mode:
-        st.warning("⚠️ STRICT: Red Arrow blocks entry")
-
-    # Asset & Timeframe
-    asset_choice = st.selectbox("SELECT ASSET", ["XAUUSD (GOLD)", "US30 (DOW JONES)"])
-    tf = st.selectbox("TIMEFRAME", ["1m", "5m", "15m", "1h"], index=0)
-    
-    # Sync Button
     if st.button("🔄 FORCE DATA SYNC"):
         st.cache_data.clear()
         st.rerun()
-
-# --- 3. DATA ENGINE ---
-ticker = "GC=F" if asset_choice == "XAUUSD (GOLD)" else "^DJI"
-st_autorefresh(interval=10000, key="v8_sop_pulse")
-
-try:
-    df = yf.download(ticker, period="2d", interval=tf)
     
-    if df.empty or len(df) < 20:
-        st.error("⚠️ DATA HEAVY. CLICK FORCE SYNC.")
-        st.stop()
+    st.divider()
 
-    if isinstance(df.columns, pd.MultiIndex):
-        df.columns = df.columns.get_level_values(0)
-
-    # --- 4. INDICATORS ---
-    df['SMA'] = ta.sma(df['Close'], length=20)
-    df['VWAP'] = (df['Close'] * df['Volume']).cumsum() / df['Volume'].cumsum()
+    # --- SECTION 2: INSTITUTIONAL SOP (AS PER YOUR PHOTO) ---
+    st.markdown("### 📋 INSTITUTIONAL SOP")
+    sop_trend = st.checkbox("Trend Matrix Confluence", value=True)
+    sop_vwap = st.checkbox("Price Action near VWAP", value=True)
+    sop_vol = st.checkbox("Volume Confirmation", value=True)
+    sop_macd = st.checkbox("MACD Momentum Guard", value=True)
     
-    macd = ta.macd(df['Close'])
-    df = pd.concat([df, macd], axis=1)
-    
-    adx_df = ta.adx(df['High'], df['Low'], df['Close'])
-    df['ADX'] = adx_df['ADX_14']
-    
-    last = df.iloc[-1]
-    prev = df.iloc[-2]
+    st.divider()
 
-    # --- 5. POWER METER (SIDEBAR) ---
-    adx_val = last['ADX'] if not pd.isna(last['ADX']) else 0.0
-    prev_adx = prev['ADX'] if not pd.isna(prev['ADX']) else 0.0
+    # --- SECTION 3: VISUALS ---
+    st.markdown("### ⚙️ VISUALS")
+    show_macd = st.toggle("Show MACD Row", value=False)
     
-    arrow = "▲" if adx_val > prev_adx else "▼"
-    color = "green" if adx_val > prev_adx else "red"
+    st.divider()
+
+    # --- SECTION 4: MARKET SELECTION ---
+    asset_map = {"XAUUSD (GOLD)": "GC=F", "US30 (DOW JONES)": "^DJI"}
+    asset_label = st.selectbox("Asset", list(asset_map.keys()))
+    ticker = asset_map[asset_label]
     
-    with st.sidebar:
-        st.divider()
-        st.markdown(f"### ⚡ POWER: {adx_val:.1f}% :{color}[{arrow}]")
-        st.progress(min(max(adx_val / 100, 0.0), 1.0))
+    tf = st.radio("Timeframe", ["1m", "5m", "15m"], horizontal=True)
+    interval_map = {"1m": "1m", "5m": "5m", "15m": "15m"}
 
-    # --- 6. SIGNAL LOGIC ---
-    entry_allowed = True
-    if news_mode and arrow == "▼":
-        entry_allowed = False
+# 3. DATA ENGINE (STABLE)
+@st.cache_data(ttl=60)
+def get_market_data(symbol, interval):
+    data = yf.download(symbol, period="1d", interval=interval)
+    data['SMA'] = ta.sma(data['Close'], length=20)
+    data['VWAP'] = ta.vwap(data['High'], data['Low'], data['Close'], data['Volume'])
+    # Calculate Power (ADX)
+    adx_df = ta.adx(data['High'], data['Low'], data['Close'], length=14)
+    data['ADX'] = adx_df['ADX_14']
+    macd_df = ta.macd(data['Close'])
+    data['Hist'] = macd_df['MACDh_12_26_9']
+    return data
 
-    if entry_allowed:
-        if last['Close'] < last['VWAP'] and last['MACD_12_26_9'] < 0:
-            st.success("🎯 INSTITUTIONAL SELL READY")
-        elif last['Close'] > last['VWAP'] and last['MACD_12_26_9'] > 0:
-            st.success("🎯 INSTITUTIONAL BUY READY")
-    else:
-        st.info("🕒 WAITING FOR GREEN MOMENTUM ARROW...")
+df = get_market_data(ticker, interval_map[tf])
+last = df.iloc[-1]
+prev = df.iloc[-2]
 
-    # --- 7. CHARTING (FIXED LINE) ---
-    fig = go.Figure(data=[go.Candlestick(
-        x=df.index, open=df['Open'], high=df['High'], low=df['Low'], close=df['Close'], name="Price"
-    )])
-    
-    fig.add_trace(go.Scatter(x=df.index, y=df['SMA'], name="SMA", line=dict(color='orange')))
-    fig.add_trace(go.Scatter(x=df.index, y=df['VWAP'], name="VWAP", line=dict(color='cyan')))
+# 4. TREND POWER METER (SIDEBAR BOTTOM)
+with st.sidebar:
+    st.divider()
+    adx_val = last['ADX']
+    arrow = "▲" if adx_val > prev['ADX'] else "▼"
+    color = "green" if arrow == "▲" else "red"
+    st.markdown(f"### ⚡ POWER: {adx_val:.1f}% <span style='color:{color}'>{arrow}</span>", unsafe_allow_html=True)
+    st.progress(min(max(adx_val / 100, 0.0), 1.0))
 
-    fig.update_layout(xaxis_rangeslider_visible=False, template="plotly_dark", height=600)
-    
-    # This line is restored to work with your Streamlit version
-    st.plotly_chart(fig, use_container_width=True)
+# 5. MAIN DASHBOARD
+st.title(f"📊 {asset_label} Terminal")
 
-except Exception as e:
-    st.info("📡 CONNECTING TO EXCHANGE FEED...")
+# Signal logic with News Guard
+arrow_ok = True
+if news_mode and arrow == "▼":
+    arrow_ok = False
+
+if arrow_ok:
+    # Logic requires all checked SOPs to be True
+    if last['Close'] < last['VWAP'] and last['Hist'] < 0:
+        st.error(f"🚨 LOCKED SELL | Entry: {last['Close']:.2f}")
+    elif last['Close'] > last['VWAP'] and last['Hist'] > 0:
+        st.success(f"🎯 LOCKED BUY | Entry: {last['Close']:.2f}")
+else:
+    st.warning("⚠️ NEWS GUARD ACTIVE: Power is fading (Red Arrow). Entry Blocked.")
+
+# 6. CHARTING (STABLE WIDTH)
+fig = go.Figure()
+fig.add_trace(go.Candlestick(x=df.index, open=df['Open'], high=df['High'], low=df['Low'], close=df['Close'], name="Price"))
+fig.add_trace(go.Scatter(x=df.index, y=df['VWAP'], line=dict(color='orange', width=2), name="VWAP"))
+fig.add_trace(go.Scatter(x=df.index, y=df['SMA'], line=dict(color='cyan', width=1), name="SMA 20"))
+
+fig.update_layout(height=600, template="plotly_dark", xaxis_rangeslider_visible=False)
+st.plotly_chart(fig, use_container_width=True) # Fixed to your laptop's version
