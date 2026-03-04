@@ -42,10 +42,50 @@ with st.sidebar:
     if st.button("♻️ RESET SIGNAL LOCK", use_container_width=True):
         st.session_state.trade_lock = None
         st.rerun()
-
-# 4. DATA ENGINE
+# --- 4. DATA ENGINE (ERROR-PROOF VERSION) ---
 ticker = "GC=F" if asset_choice == "XAUUSD (GOLD)" else "^DJI"
 st_autorefresh(interval=10000, key="v8_sop_pulse")
+
+try:
+    df = yf.download(ticker, period="1d", interval=tf)
+    
+    # FIX 1: If data is empty, stop the app and show a friendly message
+    if df.empty or len(df) < 30:
+        st.warning("📡 SYNCING... Yahoo Finance is currently refreshing Gold data. Please wait 10 seconds.")
+        st.stop()
+        
+    if isinstance(df.columns, pd.MultiIndex): 
+        df.columns = df.columns.get_level_values(0)
+    
+    # FIX 2: Fill missing values to prevent "Black Screen" math errors
+    df = df.ffill().dropna()
+
+    # --- 5. INDICATOR ENGINE (WITH SAFETY GATES) ---
+    # MACD Logic
+    exp1 = df['Close'].ewm(span=12, adjust=False).mean()
+    exp2 = df['Close'].ewm(span=26, adjust=False).mean()
+    df['MACD'] = exp1 - exp2
+    df['Signal'] = df['MACD'].ewm(span=9, adjust=False).mean()
+    df['Hist'] = df['MACD'] - df['Signal']
+
+    # ADX Logic (With NaN Check)
+    plus_dm = df['High'].diff().clip(lower=0)
+    minus_dm = (-df['Low'].diff()).clip(lower=0)
+    tr = pd.concat([df['High']-df['Low'], abs(df['High']-df['Close'].shift(1)), abs(df['Low']-df['Close'].shift(1))], axis=1).max(axis=1)
+    atr = tr.rolling(14).mean()
+    
+    # Avoid division by zero
+    safe_atr = atr.replace(0, np.nan) 
+    df['ADX'] = (abs((100 * (plus_dm.rolling(14).mean()/safe_atr)) - (100 * (minus_dm.rolling(14).mean()/safe_atr))) / 
+                ((100 * (plus_dm.rolling(14).mean()/safe_atr)) + (100 * (minus_dm.rolling(14).mean()/safe_atr))) * 100).rolling(14).mean()
+    
+    # Final Safety Clean
+    df = df.fillna(0) 
+
+except Exception as e:
+    st.error(f"⚠️ PATRO SYSTEM ERROR: {e}")
+    st.info("Check your internet or try refreshing the page.")
+
 
 try:
     df = yf.download(ticker, period="1d", interval=tf)
