@@ -1,14 +1,14 @@
 import streamlit as st
 import pandas as pd
 import pandas_ta as ta
-import yfinance as yf
 import plotly.graph_objects as go
 from plotly.subplots import make_subplots
+import yfinance as yf
 
-# 1. SETUP
-st.set_page_config(page_title="PATRO AI PRO V9.0", layout="wide")
+# 1. SYSTEM SETUP
+st.set_page_config(page_title="PATRO AI PRO V8.9", layout="wide")
 
-# 2. SIDEBAR (COMPACT)
+# 2. SIDEBAR - ALL FEATURES SQUEEZED
 with st.sidebar:
     st.title("🌌 PATRO CONTROL")
     news_mode = st.toggle("ACTIVATE NEWS GUARD", value=True)
@@ -20,6 +20,7 @@ with st.sidebar:
     st.markdown("### 📋 INSTITUTIONAL SOP")
     sop_trend = st.checkbox("Trend Matrix Confluence", value=True)
     sop_vwap = st.checkbox("Price Action near VWAP", value=True)
+    sop_vol = st.checkbox("Volume Confirmation", value=True)
     sop_macd = st.checkbox("MACD Momentum Guard", value=True)
     
     st.divider()
@@ -29,48 +30,72 @@ with st.sidebar:
     st.divider()
     asset_map = {"XAUUSD (GOLD)": "GC=F", "US30 (DOW JONES)": "^DJI"}
     asset_label = st.selectbox("Asset", list(asset_map.keys()))
-    current_tf = st.radio("Display Timeframe", ["1m", "5m", "15m"], horizontal=True, index=1)
+    tf = st.radio("Timeframe", ["1m", "5m", "15m"], horizontal=True, index=1)
 
-# 3. MULTI-TIMEFRAME DATA ENGINE
+# 3. BULLETPROOF DATA ENGINE
 @st.cache_data(ttl=30)
-def get_trend_status(ticker, tf_list):
-    status = {}
-    for tf in tf_list:
-        df = yf.download(ticker, period="1d", interval=tf, progress=False)
-        if isinstance(df.columns, pd.MultiIndex): df.columns = df.columns.get_level_values(0)
+def get_clean_data(ticker, interval):
+    df = yf.download(ticker, period="1d", interval=interval)
+    if df.empty or len(df) < 35: # Safety check for indicator length
+        return None
         
-        # Calculate Trend
-        macd = ta.macd(df['Close'])
-        vwap = ta.vwap(df['High'], df['Low'], df['Close'], df['Volume'])
-        
-        last_close = df['Close'].iloc[-1]
-        last_macd = macd.iloc[-1, 1] # Histogram
-        
-        if last_close > vwap.iloc[-1] and last_macd > 0:
-            status[tf] = "BUY"
-        elif last_close < vwap.iloc[-1] and last_macd < 0:
-            status[tf] = "SELL"
-        else:
-            status[tf] = "NEUTRAL"
-    return status
+    if isinstance(df.columns, pd.MultiIndex):
+        df.columns = df.columns.get_level_values(0)
+    
+    # Calculate Indicators safely
+    df['SMA'] = ta.sma(df['Close'], length=20)
+    df['VWAP'] = ta.vwap(df['High'], df['Low'], df['Close'], df['Volume'])
+    
+    # SMART MACD: Using position-based mapping to avoid KeyError
+    macd = ta.macd(df['Close'], fast=12, slow=26, signal=9)
+    if macd is not None:
+        df['MACD_L'] = macd.iloc[:, 0]
+        df['MACD_H'] = macd.iloc[:, 1]
+        df['MACD_S'] = macd.iloc[:, 2]
+    
+    # SMART POWER: ADX calculation
+    adx = ta.adx(df['High'], df['Low'], df['Close'], length=14)
+    if adx is not None:
+        df['ADX_P'] = adx.iloc[:, 0]
+    
+    return df.dropna()
 
-# 4. TREND ALIGNMENT BOX (THE BOX YOU ASKED FOR)
-trends = get_trend_status(asset_map[asset_label], ["1m", "5m", "15m"])
+df = get_clean_data(asset_map[asset_label], tf)
 
-st.markdown("### 🛰️ MULTI-TIMEFRAME ALIGNMENT")
-cols = st.columns(4)
-cols[0].metric("1m Trend", trends["1m"])
-cols[1].metric("5m Trend", trends["5m"])
-cols[2].metric("15m Trend", trends["15m"])
+if df is not None:
+    last, prev = df.iloc[-1], df.iloc[-2]
 
-# THE MASTER SIGNAL BOX
-with cols[3]:
-    if trends["1m"] == trends["5m"] == trends["15m"] == "BUY":
-        st.success("🔥 CONFLUENCE: ALL-TIME BUY")
-    elif trends["1m"] == trends["5m"] == trends["15m"] == "SELL":
-        st.error("❄️ CONFLUENCE: ALL-TIME SELL")
-    else:
-        st.warning("⚠️ WAITING FOR ALIGNMENT")
+    # POWER METER (SIDEBAR)
+    with st.sidebar:
+        st.divider()
+        arrow = "▲" if last['ADX_P'] > prev['ADX_P'] else "▼"
+        color = "green" if arrow == "▲" else "red"
+        st.markdown(f"### ⚡ POWER: {last['ADX_P']:.1f}% <span style='color:{color}'>{arrow}</span>", unsafe_allow_html=True)
+        st.progress(min(max(last['ADX_P'] / 100, 0.0), 1.0))
 
-# 5. MAIN CHART ENGINE
-# [Rest of the charting code from V8.9 remains here for Volume and MACD Rows]
+    # 4. TRIPLE-STACK CHART (Price -> Volume -> MACD)
+    rows = 3 if show_analysis else 1
+    heights = [0.5, 0.2, 0.3] if show_analysis else [1.0]
+    fig = make_subplots(rows=rows, cols=1, shared_xaxes=True, vertical_spacing=0.03, row_heights=heights)
+
+    # TOP: PRICE
+    fig.add_trace(go.Candlestick(x=df.index, open=df['Open'], high=df['High'], low=df['Low'], close=df['Close'], name="Price"), row=1, col=1)
+    fig.add_trace(go.Scatter(x=df.index, y=df['VWAP'], line=dict(color='orange', width=2), name="VWAP"), row=1, col=1)
+    fig.add_trace(go.Scatter(x=df.index, y=df['SMA'], line=dict(color='cyan', width=1), name="SMA 20"), row=1, col=1)
+
+    if show_analysis:
+        # MIDDLE: VOLUME
+        v_colors = ['#26A69A' if df['Close'][i] >= df['Open'][i] else '#EF5350' for i in range(len(df))]
+        fig.add_trace(go.Bar(x=df.index, y=df['Volume'], name="Volume", marker_color=v_colors), row=2, col=1)
+
+        # BOTTOM: MACD HISTOGRAM
+        h_colors = ['#26A69A' if val > 0 else '#EF5350' for val in df['MACD_H']]
+        fig.add_trace(go.Bar(x=df.index, y=df['MACD_H'], name="Hist", marker_color=h_colors), row=3, col=1)
+        fig.add_trace(go.Scatter(x=df.index, y=df['MACD_L'], line=dict(color='#2962FF'), name="MACD"), row=3, col=1)
+        fig.add_trace(go.Scatter(x=df.index, y=df['MACD_S'], line=dict(color='#FF6D00'), name="Signal"), row=3, col=1)
+
+    fig.update_layout(height=850 if show_analysis else 600, template="plotly_dark", xaxis_rangeslider_visible=False, showlegend=False)
+    st.plotly_chart(fig, use_container_width=True)
+
+else:
+    st.warning("⏳ WAITING FOR MARKET DATA... (Need at least 35 bars to start PATRO AI)")
