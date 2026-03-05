@@ -17,27 +17,37 @@ def play_alert():
     """
     st.markdown(audio_html, unsafe_allow_html=True)
 
-# 2. BULLETPROOF DATA ENGINE
+# 2. BULLETPROOF DATA ENGINE (With Multi-Index Fix)
 @st.cache_data(ttl=30)
 def get_clean_data(ticker, interval):
-    df = yf.download(ticker, period="1d", interval=interval, progress=False)
-    if df.empty or len(df) < 35:
+    try:
+        df = yf.download(ticker, period="1d", interval=interval, progress=False)
+        if df.empty or len(df) < 35:
+            return None
+            
+        # FIX: Flattens MultiIndex columns from Yahoo Finance to prevent KeyErrors
+        if isinstance(df.columns, pd.MultiIndex):
+            df.columns = df.columns.get_level_values(0)
+        
+        # Core Indicators
+        df['SMA'] = ta.sma(df['Close'], length=20)
+        df['VWAP'] = ta.vwap(df['High'], df['Low'], df['Close'], df['Volume'])
+        
+        # SMART MACD Mapping
+        macd = ta.macd(df['Close'])
+        if macd is not None:
+            df['MACD_L'] = macd.iloc[:, 0]
+            df['MACD_H'] = macd.iloc[:, 1]
+            df['MACD_S'] = macd.iloc[:, 2]
+        
+        # SMART POWER (ADX) Mapping
+        adx = ta.adx(df['High'], df['Low'], df['Close'], length=14)
+        if adx is not None:
+            df['ADX_P'] = adx.iloc[:, 0]
+        
+        return df.dropna()
+    except:
         return None
-    if isinstance(df.columns, pd.MultiIndex):
-        df.columns = df.columns.get_level_values(0)
-    
-    # Core Indicators
-    df['SMA'] = ta.sma(df['Close'], length=20)
-    df['VWAP'] = ta.vwap(df['High'], df['Low'], df['Close'], df['Volume'])
-    macd = ta.macd(df['Close'])
-    if macd is not None:
-        df['MACD_L'], df['MACD_H'], df['MACD_S'] = macd.iloc[:, 0], macd.iloc[:, 1], macd.iloc[:, 2]
-    
-    adx = ta.adx(df['High'], df['Low'], df['Close'], length=14)
-    if adx is not None:
-        df['ADX_P'] = adx.iloc[:, 0]
-    
-    return df.dropna()
 
 # 3. SIDEBAR - MASTER CONTROL & MTF SCANNER
 with st.sidebar:
@@ -55,7 +65,7 @@ with st.sidebar:
     sop_macd = st.checkbox("MACD Momentum Guard", value=True)
     
     st.divider()
-    # POWER FILTER CONTROL
+    # POWER FILTER CONTROL - Set to 25 for "Sure" signals
     st.markdown("### ⚡ POWER FILTER")
     min_power = st.slider("Min Entry Power (ADX)", 15, 45, 25)
     sound_on = st.toggle("Enable Alert Sound", value=True)
@@ -89,7 +99,7 @@ df15 = get_clean_data(ticker, "15m")
 t1, t5, t15 = check_trend(df1), check_trend(df5), check_trend(df15)
 total_confluence = t1 + t5 + t15
 
-# 5. FINAL SIGNAL LOGIC (MTF + POWER)
+# 5. FINAL SIGNAL LOGIC (TRIPLE-LOCK: MTF + POWER + MOMENTUM)
 active_df = {"1m": df1, "5m": df5, "15m": df15}[selected_tf]
 signal_text, signal_clr = "⚖️ NEUTRAL / WAITING", "#808080"
 
@@ -97,7 +107,7 @@ if active_df is not None:
     last_pwr = active_df.iloc[-1]['ADX_P']
     pwr_rising = last_pwr > active_df.iloc[-2]['ADX_P']
 
-    # Triple-Lock Check
+    # THE TRIPLE-LOCK: All 3 timeframes same color + Power > 25 + Power rising
     if total_confluence == 3 and last_pwr >= min_power and pwr_rising:
         signal_text, signal_clr = "🚀 LOCKED BUY (POWER ALIGNED)", "#00FF00"
         if sound_on: play_alert()
@@ -124,7 +134,7 @@ if active_df is not None:
         st.markdown(f"### ⚡ {selected_tf} POWER: {last['ADX_P']:.1f}% {arrow}")
         st.progress(min(max(last['ADX_P'] / 100, 0.0), 1.0))
 
-    # 6. TRIPLE-STACK CHARTING
+    # 6. TRIPLE-STACK CHARTING (Price -> Volume -> MACD)
     rows = 3 if show_analysis else 1
     heights = [0.5, 0.2, 0.3] if show_analysis else [1.0]
     fig = make_subplots(rows=rows, cols=1, shared_xaxes=True, vertical_spacing=0.03, row_heights=heights)
@@ -144,3 +154,9 @@ if active_df is not None:
         fig.add_trace(go.Bar(x=active_df.index, y=active_df['MACD_H'], name="Hist", marker_color=h_colors), row=3, col=1)
         fig.add_trace(go.Scatter(x=active_df.index, y=active_df['MACD_L'], line=dict(color='#2962FF'), name="MACD"), row=3, col=1)
         fig.add_trace(go.Scatter(x=active_df.index, y=active_df['MACD_S'], line=dict(color='#FF6D00'), name="Signal"), row=3, col=1)
+
+    fig.update_layout(height=850 if show_analysis else 600, template="plotly_dark", xaxis_rangeslider_visible=False, showlegend=False)
+    st.plotly_chart(fig, use_container_width=True)
+
+else:
+    st.warning("⏳ SYNCING MARKET DATA... Ensure you have at least 35 bars of history.")
