@@ -89,7 +89,7 @@ if active_df is not None:
         st.write(f"15M: {'🟢' if t15==1 else '🔴' if t15==-1 else '⚪'}")
         
         st.divider()
-        # --- RESTORED POWER & ARROWS ---
+        # --- TREND ARROWS & POWER ---
         arrow = "▲" if pwr_rising else "▼"
         arrow_clr = "#00FF00" if pwr_rising else "#FF0000"
         pwr_display_clr = "#FFFF00" if last_pwr < 20 else "#00FF00" if last_pwr < 40 else "#FF0000"
