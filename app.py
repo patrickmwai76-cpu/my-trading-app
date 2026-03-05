@@ -6,7 +6,7 @@ from plotly.subplots import make_subplots
 import yfinance as yf
 
 # 1. SYSTEM SETUP
-st.set_page_config(page_title="PATRO AI PRO V9.5", layout="wide")
+st.set_page_config(page_title="PATRO AI PRO V9.6", layout="wide")
 
 # Function for Sound Alert
 def play_alert():
@@ -29,8 +29,7 @@ def get_clean_data(ticker, interval):
         df['SMA'] = ta.sma(df['Close'], length=20)
         df['VWAP'] = ta.vwap(df['High'], df['Low'], df['Close'], df['Volume'])
         
-        # --- NEW: DISTANCE CALCULATION ---
-        # Measures how far price is from fair value (VWAP) as a %
+        # DISTANCE CALCULATION (Measures stretch from VWAP)
         df['Dist_Pct'] = ((df['Close'] - df['VWAP']) / df['VWAP']) * 100
         
         macd = ta.macd(df['Close'])
@@ -61,7 +60,6 @@ with st.sidebar:
     st.divider()
     st.markdown("### ⚡ POWER & SAFETY")
     min_power = st.slider("Min Entry Power (ADX)", 15, 45, 25)
-    # --- NEW: SAFETY THRESHOLD SLIDER ---
     max_gap = st.slider("Max VWAP Gap %", 0.05, 0.30, 0.15, help="Prevents entering too far from the line")
     sound_on = st.toggle("Enable Alert Sound", value=True)
 
@@ -101,7 +99,6 @@ if active_df is not None:
     last, prev = active_df.iloc[-1], active_df.iloc[-2]
     last_pwr = last['ADX_P']
     pwr_rising = last_pwr > prev['ADX_P']
-    # --- SAFETY CHECK ---
     is_safe_gap = abs(last['Dist_Pct']) <= max_gap
 
     if abs(total_confluence) == 3 and last_pwr >= min_power and pwr_rising:
@@ -112,7 +109,6 @@ if active_df is not None:
                 signal_text, signal_clr = "📉 LOCKED SELL (POWER ALIGNED)", "#FF0000"
             if sound_on: play_alert()
         else:
-            # TRIGGERED BUT TOO FAR FROM VWAP
             signal_text, signal_clr = "⚠️ OVEREXTENDED (GAP TOO LARGE)", "#FFA500"
 
 # --- MAIN DASHBOARD DISPLAY ---
@@ -128,7 +124,30 @@ if active_df is not None:
         st.write(f"15M: {'🟢' if t15==1 else '🔴' if t15==-1 else '⚪'}")
         st.divider()
         st.markdown(f"### 📏 GAP: {last['Dist_Pct']:.3f}%")
-        st.progress(min(max(abs(last['Dist_Pct']) / max_gap, 0.0), 1.0) if is_safe_gap else 1.0)
+        st.progress(min(max(abs(last['Dist_Pct']) / max_gap, 0.0), 1.0))
 
     # 6. TRIPLE-STACK CHARTING
-    rows = 3 if show_analysis else
+    rows = 3 if show_analysis else 1
+    heights = [0.5, 0.2, 0.3] if show_analysis else [1.0]
+    fig = make_subplots(rows=rows, cols=1, shared_xaxes=True, vertical_spacing=0.03, row_heights=heights)
+
+    # ROW 1: Price Action
+    fig.add_trace(go.Candlestick(x=active_df.index, open=active_df['Open'], high=active_df['High'], low=active_df['Low'], close=active_df['Close'], name="Price"), row=1, col=1)
+    fig.add_trace(go.Scatter(x=active_df.index, y=active_df['VWAP'], line=dict(color='orange', width=2), name="VWAP"), row=1, col=1)
+    fig.add_trace(go.Scatter(x=active_df.index, y=active_df['SMA'], line=dict(color='cyan', width=1), name="SMA 20"), row=1, col=1)
+
+    if show_analysis:
+        # ROW 2: Volume
+        v_colors = ['#26A69A' if active_df['Close'][i] >= active_df['Open'][i] else '#EF5350' for i in range(len(active_df))]
+        fig.add_trace(go.Bar(x=active_df.index, y=active_df['Volume'], name="Volume", marker_color=v_colors), row=2, col=1)
+        
+        # ROW 3: MACD
+        h_colors = ['#26A69A' if val > 0 else '#EF5350' for val in active_df['MACD_H']]
+        fig.add_trace(go.Bar(x=active_df.index, y=active_df['MACD_H'], name="Hist", marker_color=h_colors), row=3, col=1)
+        fig.add_trace(go.Scatter(x=active_df.index, y=active_df['MACD_L'], line=dict(color='#2962FF'), name="MACD"), row=3, col=1)
+        fig.add_trace(go.Scatter(x=active_df.index, y=active_df['MACD_S'], line=dict(color='#FF6D00'), name="Signal"), row=3, col=1)
+
+    fig.update_layout(height=850 if show_analysis else 600, template="plotly_dark", xaxis_rangeslider_visible=False, showlegend=False)
+    st.plotly_chart(fig, use_container_width=True)
+else:
+    st.warning("⏳ SYNCING MARKET DATA... Ensure market is open.")
