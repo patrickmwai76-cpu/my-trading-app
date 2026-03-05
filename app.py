@@ -6,9 +6,18 @@ from plotly.subplots import make_subplots
 import yfinance as yf
 
 # 1. SYSTEM SETUP
-st.set_page_config(page_title="PATRO AI PRO V8.9.5", layout="wide")
+st.set_page_config(page_title="PATRO AI PRO V9.5", layout="wide")
 
-# 2. BULLETPROOF DATA ENGINE (UPGRADED FOR MTF)
+# Function for Sound Alert (HTML/JS Injection)
+def play_alert():
+    audio_html = """
+    <audio autoplay>
+      <source src="https://www.soundjay.com/buttons/sounds/button-3.mp3" type="audio/mpeg">
+    </audio>
+    """
+    st.markdown(audio_html, unsafe_allow_html=True)
+
+# 2. BULLETPROOF DATA ENGINE
 @st.cache_data(ttl=30)
 def get_clean_data(ticker, interval):
     df = yf.download(ticker, period="1d", interval=interval, progress=False)
@@ -46,6 +55,12 @@ with st.sidebar:
     sop_macd = st.checkbox("MACD Momentum Guard", value=True)
     
     st.divider()
+    # POWER FILTER CONTROL
+    st.markdown("### ⚡ POWER FILTER")
+    min_power = st.slider("Min Entry Power (ADX)", 15, 45, 25)
+    sound_on = st.toggle("Enable Alert Sound", value=True)
+
+    st.divider()
     asset_map = {"XAUUSD (GOLD)": "GC=F", "US30 (DOW JONES)": "^DJI"}
     asset_label = st.selectbox("Asset", list(asset_map.keys()))
     ticker = asset_map[asset_label]
@@ -62,9 +77,7 @@ with st.sidebar:
 def check_trend(df):
     if df is None: return 0
     last = df.iloc[-1]
-    # Bullish if above VWAP and MACD Hist is positive
     if last['Close'] > last['VWAP'] and last['MACD_H'] > 0: return 1
-    # Bearish if below VWAP and MACD Hist is negative
     if last['Close'] < last['VWAP'] and last['MACD_H'] < 0: return -1
     return 0
 
@@ -76,24 +89,29 @@ df15 = get_clean_data(ticker, "15m")
 t1, t5, t15 = check_trend(df1), check_trend(df5), check_trend(df15)
 total_confluence = t1 + t5 + t15
 
-# Signal Logic
-if total_confluence == 3:
-    signal_text, signal_clr = "🔥 STRONG BUY DETECTED", "green"
-elif total_confluence == -3:
-    signal_text, signal_clr = "📉 STRONG SELL DETECTED", "red"
-else:
-    signal_text, signal_clr = "⚖️ NEUTRAL / WAITING", "gray"
-
-# 5. MAIN DASHBOARD
-st.markdown(f"<h1 style='text-align: center; color: {signal_clr};'>{signal_text}</h1>", unsafe_allow_html=True)
-
-# Select the active data for the chart
+# 5. FINAL SIGNAL LOGIC (MTF + POWER)
 active_df = {"1m": df1, "5m": df5, "15m": df15}[selected_tf]
+signal_text, signal_clr = "⚖️ NEUTRAL / WAITING", "#808080"
+
+if active_df is not None:
+    last_pwr = active_df.iloc[-1]['ADX_P']
+    pwr_rising = last_pwr > active_df.iloc[-2]['ADX_P']
+
+    # Triple-Lock Check
+    if total_confluence == 3 and last_pwr >= min_power and pwr_rising:
+        signal_text, signal_clr = "🚀 LOCKED BUY (POWER ALIGNED)", "#00FF00"
+        if sound_on: play_alert()
+    elif total_confluence == -3 and last_pwr >= min_power and pwr_rising:
+        signal_text, signal_clr = "📉 LOCKED SELL (POWER ALIGNED)", "#FF0000"
+        if sound_on: play_alert()
+
+# --- MAIN DASHBOARD DISPLAY ---
+st.markdown(f"<h1 style='text-align: center; color: {signal_clr};'>{signal_text}</h1>", unsafe_allow_html=True)
 
 if active_df is not None:
     last, prev = active_df.iloc[-1], active_df.iloc[-2]
 
-    # UPDATE SIDEBAR POWER METER
+    # UPDATE SIDEBAR STATUS
     with st.sidebar:
         st.divider()
         st.markdown(f"### 🔍 MTF STATUS")
@@ -106,24 +124,23 @@ if active_df is not None:
         st.markdown(f"### ⚡ {selected_tf} POWER: {last['ADX_P']:.1f}% {arrow}")
         st.progress(min(max(last['ADX_P'] / 100, 0.0), 1.0))
 
-    # CHARTING
+    # 6. TRIPLE-STACK CHARTING
     rows = 3 if show_analysis else 1
     heights = [0.5, 0.2, 0.3] if show_analysis else [1.0]
     fig = make_subplots(rows=rows, cols=1, shared_xaxes=True, vertical_spacing=0.03, row_heights=heights)
 
+    # ROW 1: Price
     fig.add_trace(go.Candlestick(x=active_df.index, open=active_df['Open'], high=active_df['High'], low=active_df['Low'], close=active_df['Close'], name="Price"), row=1, col=1)
     fig.add_trace(go.Scatter(x=active_df.index, y=active_df['VWAP'], line=dict(color='orange', width=2), name="VWAP"), row=1, col=1)
     fig.add_trace(go.Scatter(x=active_df.index, y=active_df['SMA'], line=dict(color='cyan', width=1), name="SMA 20"), row=1, col=1)
 
     if show_analysis:
+        # ROW 2: Volume (Middle)
         v_colors = ['#26A69A' if active_df['Close'][i] >= active_df['Open'][i] else '#EF5350' for i in range(len(active_df))]
         fig.add_trace(go.Bar(x=active_df.index, y=active_df['Volume'], name="Volume", marker_color=v_colors), row=2, col=1)
+        
+        # ROW 3: MACD (Bottom)
         h_colors = ['#26A69A' if val > 0 else '#EF5350' for val in active_df['MACD_H']]
         fig.add_trace(go.Bar(x=active_df.index, y=active_df['MACD_H'], name="Hist", marker_color=h_colors), row=3, col=1)
         fig.add_trace(go.Scatter(x=active_df.index, y=active_df['MACD_L'], line=dict(color='#2962FF'), name="MACD"), row=3, col=1)
         fig.add_trace(go.Scatter(x=active_df.index, y=active_df['MACD_S'], line=dict(color='#FF6D00'), name="Signal"), row=3, col=1)
-
-    fig.update_layout(height=850, template="plotly_dark", xaxis_rangeslider_visible=False, showlegend=False)
-    st.plotly_chart(fig, use_container_width=True)
-else:
-    st.warning("⏳ SYNCING ALL TIMEFRAMES... PLEASE WAIT.")
