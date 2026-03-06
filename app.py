@@ -4,112 +4,95 @@ import pandas_ta as ta
 import plotly.graph_objects as go
 from plotly.subplots import make_subplots
 import yfinance as yf
+from datetime import datetime
+import pytz
 
 # 1. SYSTEM SETUP
-st.set_page_config(page_title="PATRO AI PRO V9.7", layout="wide")
+st.set_page_config(page_title="PATRO AI PRO V10.2", layout="wide")
 
-def play_alert():
-    audio_html = """<audio autoplay><source src="https://www.soundjay.com/buttons/sounds/button-3.mp3" type="audio/mpeg"></audio>"""
-    st.markdown(audio_html, unsafe_allow_html=True)
+# 2. SESSION CLOCK (Nairobi Time)
+eat = pytz.timezone('Africa/Nairobi')
+now_eat = datetime.now(eat).time()
 
-# 2. DATA ENGINE
+def get_session_status():
+    if datetime.strptime("03:00", "%H:%M").time() <= now_eat < datetime.strptime("10:00", "%H:%M").time():
+        return "🔵 ASIA (TOKYO)", "Low Volatility - Watch for Traps", "#1E90FF"
+    elif datetime.strptime("10:00", "%H:%M").time() <= now_eat < datetime.strptime("15:00", "%H:%M").time():
+        return "🟢 LONDON OPEN", "High Volume - Trend Formation", "#00FF00"
+    elif datetime.strptime("15:00", "%H:%M").time() <= now_eat < datetime.strptime("19:00", "%H:%M").time():
+        return "🔥 THE OVERLAP", "MAX VOLATILITY", "#FF4500"
+    else:
+        return "🔴 NEW YORK / NIGHT", "Fast Moves - Watch Reversals", "#FF0000"
+
+session_name, session_vibe, session_clr = get_session_status()
+
+# 3. DATA ENGINE
 @st.cache_data(ttl=30)
-def get_clean_data(ticker, interval):
+def get_full_data(ticker, interval):
     try:
         df = yf.download(ticker, period="1d", interval=interval, progress=False)
         if df.empty or len(df) < 35: return None
         if isinstance(df.columns, pd.MultiIndex): df.columns = df.columns.get_level_values(0)
-        df['SMA'] = ta.sma(df['Close'], length=20)
         df['VWAP'] = ta.vwap(df['High'], df['Low'], df['Close'], df['Volume'])
-        df['Dist_Pct'] = ((df['Close'] - df['VWAP']) / df['VWAP']) * 100
         macd = ta.macd(df['Close'])
-        if macd is not None:
-            df['MACD_L'], df['MACD_H'], df['MACD_S'] = macd.iloc[:, 0], macd.iloc[:, 1], macd.iloc[:, 2]
-        adx = ta.adx(df['High'], df['Low'], df['Close'], length=14)
-        if adx is not None: df['ADX_P'] = adx.iloc[:, 0]
+        df['MACD'], df['MACD_H'], df['MACD_S'] = macd.iloc[:, 0], macd.iloc[:, 1], macd.iloc[:, 2]
+        df['ADX'] = ta.adx(df['High'], df['Low'], df['Close'])['ADX_14']
         return df.dropna()
     except: return None
 
-# 3. SIDEBAR
+# 4. SIDEBAR - MASTER CONTROL
 with st.sidebar:
-    st.title("🌌 PATRO CONTROL")
-    if st.button("🔄 FORCE DATA SYNC"):
-        st.cache_data.clear()
-        st.rerun()
+    st.markdown(f"<h2 style='color:{session_clr}; text-align:center;'>{session_name}</h2>", unsafe_allow_html=True)
+    st.markdown(f"<p style='text-align:center;'>{session_vibe}</p>", unsafe_allow_html=True)
     
     st.divider()
-    st.markdown("### ⚡ POWER & SAFETY")
-    min_power = st.slider("Min Entry Power (ADX)", 15, 45, 25)
-    max_gap = st.slider("Max VWAP Gap %", 0.05, 0.30, 0.15)
-    sound_on = st.toggle("Enable Alert Sound", value=True)
-
+    # RESTORED: INSTITUTIONAL SOP CHECKLIST
+    st.markdown("### 📋 INSTITUTIONAL SOP")
+    sop_trend = st.checkbox("Trend Matrix Confluence", value=True)
+    sop_vwap = st.checkbox("Price Action near VWAP", value=True)
+    sop_vol = st.checkbox("Volume Confirmation", value=True)
+    sop_macd = st.checkbox("Momentum Guard", value=True)
+    
+    st.divider()
     asset_map = {"XAUUSD (GOLD)": "GC=F", "US30 (DOW JONES)": "^DJI"}
-    asset_label = st.selectbox("Asset", list(asset_map.keys()))
+    asset_label = st.selectbox("Select Asset", list(asset_map.keys()))
     ticker = asset_map[asset_label]
-    selected_tf = st.radio("Display Chart", ["1m", "5m", "15m"], index=0, horizontal=True)
-    show_analysis = st.toggle("Show MACD Analysis Row", value=True)
+    selected_tf = st.radio("Timeframe", ["1m", "5m", "15m"], index=0, horizontal=True)
+    
+    # 5. RESTORED TREND MATRIX & DATA
+    df1, df5, df15 = get_full_data(ticker, "1m"), get_full_data(ticker, "5m"), get_full_data(ticker, "15m")
+    
+    if df1 is not None:
+        last = df1.iloc[-1]
+        st.divider()
+        st.markdown("### 💰 LIVE PRICE DATA")
+        st.metric("CURRENT PRICE", f"{last['Close']:.2f}")
+        
+        st.markdown("### 🔍 TREND MATRIX")
+        def get_dot(df):
+            if df is None: return "⚪"
+            l = df.iloc[-1]
+            return "🟢" if l['Close'] > l['VWAP'] and l['MACD_H'] > 0 else "🔴"
+        st.write(f"1M: {get_dot(df1)} | 5M: {get_dot(df5)} | 15M: {get_dot(df15)}")
+        
+        st.divider()
+        st.markdown(f"### ⚡ POWER: {last['ADX']:.1f}%")
+        st.progress(min(last['ADX']/100, 1.0))
 
-# 4. SCANNER & LOGIC
-def check_trend(df):
-    if df is None: return 0
-    last = df.iloc[-1]
-    if last['Close'] > last['VWAP'] and last['MACD_H'] > 0: return 1
-    if last['Close'] < last['VWAP'] and last['MACD_H'] < 0: return -1
-    return 0
-
-df1, df5, df15 = get_clean_data(ticker, "1m"), get_clean_data(ticker, "5m"), get_clean_data(ticker, "15m")
-t1, t5, t15 = check_trend(df1), check_trend(df5), check_trend(df15)
-total_confluence = t1 + t5 + t15
-
+# 6. MAIN CHART
 active_df = {"1m": df1, "5m": df5, "15m": df15}[selected_tf]
-signal_text, signal_clr = "⚖️ NEUTRAL / WAITING", "#808080"
-
 if active_df is not None:
-    last, prev = active_df.iloc[-1], active_df.iloc[-2]
-    last_pwr = last['ADX_P']
-    pwr_rising = last_pwr > prev['ADX_P']
-    is_safe_gap = abs(last['Dist_Pct']) <= max_gap
-
-    if abs(total_confluence) == 3 and last_pwr >= min_power and pwr_rising:
-        if is_safe_gap:
-            signal_text = "🚀 LOCKED BUY (POWER ALIGNED)" if total_confluence == 3 else "📉 LOCKED SELL (POWER ALIGNED)"
-            signal_clr = "#00FF00" if total_confluence == 3 else "#FF0000"
-            if sound_on: play_alert()
-        else:
-            signal_text, signal_clr = "⚠️ OVEREXTENDED (GAP TOO LARGE)", "#FFA500"
-
-st.markdown(f"<h1 style='text-align: center; color: {signal_clr};'>{signal_text}</h1>", unsafe_allow_html=True)
-
-if active_df is not None:
-    with st.sidebar:
-        st.divider()
-        st.markdown("### 🔍 MTF STATUS")
-        st.write(f"1M: {'🟢' if t1==1 else '🔴' if t1==-1 else '⚪'}")
-        st.write(f"5M: {'🟢' if t5==1 else '🔴' if t5==-1 else '⚪'}")
-        st.write(f"15M: {'🟢' if t15==1 else '🔴' if t15==-1 else '⚪'}")
-        
-        st.divider()
-        # --- TREND ARROWS & POWER ---
-        arrow = "▲" if pwr_rising else "▼"
-        arrow_clr = "#00FF00" if pwr_rising else "#FF0000"
-        pwr_display_clr = "#FFFF00" if last_pwr < 20 else "#00FF00" if last_pwr < 40 else "#FF0000"
-        
-        st.markdown(f"### ⚡ POWER: <span style='color:{pwr_display_clr}'>{last_pwr:.1f}%</span> <span style='color:{arrow_clr}'>{arrow}</span>", unsafe_allow_html=True)
-        st.progress(min(max(last_pwr / 100, 0.0), 1.0))
-        
-        st.markdown(f"**GAP Status:** {last['Dist_Pct']:.3f}%")
-        st.progress(min(max(abs(last['Dist_Pct']) / max_gap, 0.0), 1.0))
-
-    # 6. CHARTING
-    rows = 3 if show_analysis else 1
-    heights = [0.5, 0.2, 0.3] if show_analysis else [1.0]
-    fig = make_subplots(rows=rows, cols=1, shared_xaxes=True, vertical_spacing=0.03, row_heights=heights)
-    fig.add_trace(go.Candlestick(x=active_df.index, open=active_df['Open'], high=active_df['High'], low=active_df['Low'], close=active_df['Close'], name="Price"), row=1, col=1)
+    fig = make_subplots(rows=3, cols=1, shared_xaxes=True, 
+                        vertical_spacing=0.03, row_heights=[0.6, 0.15, 0.25])
+    fig.add_trace(go.Candlestick(x=active_df.index, open=active_df['Open'], high=active_df['High'], 
+                                 low=active_df['Low'], close=active_df['Close'], name="Price"), row=1, col=1)
     fig.add_trace(go.Scatter(x=active_df.index, y=active_df['VWAP'], line=dict(color='orange', width=2), name="VWAP"), row=1, col=1)
-    if show_analysis:
-        v_colors = ['#26A69A' if active_df['Close'][i] >= active_df['Open'][i] else '#EF5350' for i in range(len(active_df))]
-        fig.add_trace(go.Bar(x=active_df.index, y=active_df['Volume'], name="Volume", marker_color=v_colors), row=2, col=1)
-        h_colors = ['#26A69A' if val > 0 else '#EF5350' for val in active_df['MACD_H']]
-        fig.add_trace(go.Bar(x=active_df.index, y=active_df['MACD_H'], name="Hist", marker_color=h_colors), row=3, col=1)
-    fig.update_layout(height=850, template="plotly_dark", xaxis_rangeslider_visible=False, showlegend=False)
+    
+    v_colors = ['#00FF00' if active_df['Close'][i] >= active_df['Open'][i] else '#FF0000' for i in range(len(active_df))]
+    fig.add_trace(go.Bar(x=active_df.index, y=active_df['Volume'], name="Volume", marker_color=v_colors), row=2, col=1)
+    
+    h_colors = ['#26A69A' if val > 0 else '#EF5350' for val in active_df['MACD_H']]
+    fig.add_trace(go.Bar(x=active_df.index, y=active_df['MACD_H'], name="MACD Hist", marker_color=h_colors), row=3, col=1)
+
+    fig.update_layout(height=900, template="plotly_dark", xaxis_rangeslider_visible=False)
     st.plotly_chart(fig, use_container_width=True)
