@@ -5,84 +5,99 @@ import yfinance as yf
 import plotly.graph_objects as go
 from plotly.subplots import make_subplots
 import pytz
+from datetime import datetime
 
 # 1. PAGE SETUP
-st.set_page_config(page_title="PATRO AI PRO V11.4", layout="wide")
+st.set_page_config(page_title="PATRO AI PRO V11.3", layout="wide")
 
-# 2. LIVE MARKET LEVELS (March 6, 2026)
-MARKET_LEVELS = {
-    "XAUUSD": {"Pivot": 5165, "R1": 5208, "S1": 5107, "NFP_Target": 5320},
-    "US30": {"Pivot": 48300, "R1": 49017, "S1": 47660, "NFP_Target": 50000}
-}
+# 2. DATA ENGINE
+@st.cache_data(ttl=30)
+def get_patro_data(ticker, interval):
+    try:
+        df = yf.download(ticker, period="2d", interval=interval, auto_adjust=True, progress=False)
+        if df.empty: return None
+        if isinstance(df.columns, pd.MultiIndex): df.columns = df.columns.get_level_values(0)
+        
+        # Technicals
+        df['VWAP'] = ta.vwap(df['High'], df['Low'], df['Close'], df['Volume'])
+        macd = ta.macd(df['Close'])
+        df['MACD_H'] = macd.iloc[:, 1]
+        df['ADX'] = ta.adx(df['High'], df['Low'], df['Close'])['ADX_14']
+        return df.dropna()
+    except: return None
 
-# 3. SIDEBAR: RISK & NEWS
+# 3. SIDEBAR: SOP & NEWS ALERT
 with st.sidebar:
-    st.title("🌌 PATRO V11.4")
+    st.title("🌌 PATRO V11.3")
     
-    # NFP COUNTDOWN ALERT
-    st.error("🚨 **NFP FRIDAY ALERT**")
-    st.write("**US Employment Data: 16:30 EAT**")
-    st.caption("Expect $50+ swings on Gold. Tighten Stop Losses!")
-
+    # NEWS ALERT BOX
+    st.warning("⚠️ **HIGH IMPACT NEWS**")
+    st.markdown("""
+    **Event:** US Non-Farm Payrolls (NFP)  
+    **Time:** 16:30 EAT (Today)  
+    **Impact:** 🔴 ULTRA HIGH (XAU/US30)  
+    *Strategy: Avoid trades 15m before/after.*
+    """)
+    
     st.divider()
     st.markdown("### 📋 INSTITUTIONAL SOP")
     sop_trend = st.checkbox("Trend Matrix Confluence", value=True)
     sop_vwap = st.checkbox("Price Action near VWAP", value=True)
     sop_vol = st.checkbox("Volume Confirmation", value=True)
+    sop_macd = st.checkbox("Momentum Guard", value=True)
     
     st.divider()
-    st.markdown("### 🧮 POSITION CALCULATOR")
-    balance = st.number_input("Account ($)", value=1000)
-    risk_pct = st.slider("Risk %", 0.5, 3.0, 1.0)
-    stop_pips = st.number_input("Stop Loss (Pips)", value=30)
+    asset_dict = {"XAUUSD": "GC=F", "US30": "^DJI", "GBPUSD": "GBPUSD=X"}
+    choice = st.selectbox("Market", list(asset_dict.keys()))
+    tf = st.radio("Timeframe", ["1m", "5m", "15m"], horizontal=True)
+
+# 4. TREND CONFLUENCE & POWER LOGIC
+df1, df5, df15 = get_patro_data(asset_dict[choice], "1m"), get_patro_data(asset_dict[choice], "5m"), get_patro_data(asset_dict[choice], "15m")
+
+def get_bias(df):
+    if df is None: return 0
+    l = df.iloc[-1]
+    if l['Close'] > l['VWAP'] and l['MACD_H'] > 0: return 1
+    if l['Close'] < l['VWAP'] and l['MACD_H'] < 0: return -1
+    return 0
+
+b1, b5, b15 = get_bias(df1), get_bias(df5), get_bias(df15)
+active_df = {"1m": df1, "5m": df5, "15m": df15}[tf]
+
+# 5. HEADER: SIGNAL LOCK & POWER ARROW
+signal_text, signal_clr = "⚖️ SCANNING", "#808080"
+if active_df is not None:
+    last, prev = active_df.iloc[-1], active_df.iloc[-2]
+    power_up = last['ADX'] > prev['ADX']
+    arrow = "▲" if power_up else "▼"
+    arrow_clr = "#00FF00" if power_up else "#FF0000"
     
-    # Lot Calculation Logic
-    risk_amt = balance * (risk_pct / 100)
-    lots = risk_amt / (stop_pips * 10)
-    st.success(f"Recommended Lot: {lots:.2f}")
+    # Triple-Lock Logic
+    confluence = (b1 + b5 + b15)
+    if abs(confluence) == 3 and last['ADX'] > 25 and power_up:
+        signal_text = "🚀 LOCKED BUY" if confluence == 3 else "📉 LOCKED SELL"
+        signal_clr = "#00FF00" if confluence == 3 else "#FF0000"
 
-# 4. DATA & SIGNAL ENGINE
-@st.cache_data(ttl=30)
-def get_data(ticker, interval):
-    df = yf.download(ticker, period="2d", interval=interval, auto_adjust=True, progress=False)
-    if df.empty: return None
-    if isinstance(df.columns, pd.MultiIndex): df.columns = df.columns.get_level_values(0)
-    df['VWAP'] = ta.vwap(df['High'], df['Low'], df['Close'], df['Volume'])
-    df['ADX'] = ta.adx(df['High'], df['Low'], df['Close'])['ADX_14']
-    return df.dropna()
-
-asset_map = {"XAUUSD": "GC=F", "US30": "^DJI"}
-choice = st.selectbox("Select Market", list(asset_map.keys()))
-df = get_data(asset_map[choice], "5m")
-
-# 5. HEADER: SIGNAL LOCK & POWER
-if df is not None:
-    last, prev = df.iloc[-1], df.iloc[-2]
-    pwr_up = last['ADX'] > prev['ADX']
-    arrow = "▲" if pwr_up else "▼"
-    
-    # Signal Logic
-    sig_text, sig_clr = "⚖️ SCANNING", "#808080"
-    if last['Close'] > last['VWAP'] and last['ADX'] > 25 and pwr_up:
-        sig_text, sig_clr = "🚀 LOCKED BUY", "#00FF00"
-    elif last['Close'] < last['VWAP'] and last['ADX'] > 25 and pwr_up:
-        sig_text, sig_clr = "📉 LOCKED SELL", "#FF0000"
-
+    # Dynamic Header Display
     c1, c2 = st.columns([3, 2])
-    with c1: st.markdown(f"<h1 style='color:{sig_clr};'>{sig_text}</h1>", unsafe_allow_html=True)
-    with c2: st.markdown(f"### POWER: {last['ADX']:.1f}% {arrow}")
+    with c1:
+        st.markdown(f"<h1 style='color:{signal_clr}; font-size: 50px;'>{signal_text}</h1>", unsafe_allow_html=True)
+    with c2:
+        st.markdown(f"### ⚡ TREND POWER: {last['ADX']:.1f}% <span style='color:{arrow_clr}'>{arrow}</span>", unsafe_allow_html=True)
+        st.progress(min(last['ADX']/100, 1.0))
 
-# 6. CHARTING WITH PIVOT LEVELS
-if df is not None:
-    fig = make_subplots(rows=1, cols=1)
-    fig.add_trace(go.Candlestick(x=df.index, open=df['Open'], high=df['High'], low=df['Low'], close=df['Close'], name="Price"))
-    fig.add_trace(go.Scatter(x=df.index, y=df['VWAP'], line=dict(color='orange', width=2), name="VWAP"))
+# 6. CHARTING WITH SESSION OVERLAYS
+if active_df is not None:
+    fig = make_subplots(rows=2, cols=1, shared_xaxes=True, vertical_spacing=0.03, row_heights=[0.7, 0.3])
+    fig.add_trace(go.Candlestick(x=active_df.index, open=active_df['Open'], high=active_df['High'], low=active_df['Low'], close=active_df['Close'], name="Price"), row=1, col=1)
+    fig.add_trace(go.Scatter(x=active_df.index, y=active_df['VWAP'], line=dict(color='orange', width=2), name="VWAP"), row=1, col=1)
     
-    # Add Today's Pivot Levels
-    levels = MARKET_LEVELS[choice]
-    fig.add_hline(y=levels['Pivot'], line_dash="dash", line_color="white", annotation_text="PIVOT")
-    fig.add_hline(y=levels['R1'], line_dash="dot", line_color="red", annotation_text="RESISTANCE (R1)")
-    fig.add_hline(y=levels['S1'], line_dash="dot", line_color="green", annotation_text="SUPPORT (S1)")
-    
-    fig.update_layout(height=700, template="plotly_dark", xaxis_rangeslider_visible=False)
+    # London & NY Shading (EAT)
+    for i in range(0, len(active_df), 5):
+        dt = active_df.index[i].astimezone(pytz.timezone('Africa/Nairobi'))
+        if 10 <= dt.hour < 18: fig.add_vrect(x0=dt, x1=dt, fillcolor="blue", opacity=0.02, layer="below", line_width=0)
+        if 15 <= dt.hour < 23: fig.add_vrect(x0=dt, x1=dt, fillcolor="green", opacity=0.02, layer="below", line_width=0)
+
+    fig.add_trace(go.Bar(x=active_df.index, y=active_df['MACD_H'], name="MACD"), row=2, col=1)
+    fig.update_layout(height=800, template="plotly_dark", xaxis_rangeslider_visible=False)
     st.plotly_chart(fig, use_container_width=True)
