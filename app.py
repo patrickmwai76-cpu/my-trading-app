@@ -8,7 +8,7 @@ import pytz
 from datetime import datetime
 
 # 1. PAGE SETUP
-st.set_page_config(page_title="PATRO AI PRO V11.3", layout="wide")
+st.set_page_config(page_title="PATRO AI PRO V11.4", layout="wide")
 
 # 2. DATA ENGINE
 @st.cache_data(ttl=30)
@@ -26,11 +26,11 @@ def get_patro_data(ticker, interval):
         return df.dropna()
     except: return None
 
-# 3. SIDEBAR: SOP & NEWS ALERT
+# 3. SIDEBAR: SOP, NEWS & RISK
 with st.sidebar:
-    st.title("🌌 PATRO V11.3")
+    st.title("🌌 PATRO V11.4")
     
-    # NEWS ALERT BOX
+    # NEWS ALERT BOX (NFP UPDATED)
     st.warning("⚠️ **HIGH IMPACT NEWS**")
     st.markdown("""
     **Event:** US Non-Farm Payrolls (NFP)  
@@ -46,6 +46,17 @@ with st.sidebar:
     sop_vol = st.checkbox("Volume Confirmation", value=True)
     sop_macd = st.checkbox("Momentum Guard", value=True)
     
+    st.divider()
+    st.markdown("### 🧮 RISK CALCULATOR")
+    balance = st.number_input("Account Balance ($)", value=1000)
+    risk_pct = st.slider("Risk Per Trade %", 0.5, 5.0, 1.0)
+    stop_pips = st.number_input("Stop Loss (Pips/Points)", value=30)
+    
+    # Lot calculation logic
+    risk_dollars = balance * (risk_pct / 100)
+    recommended_lots = risk_dollars / (stop_pips * 10) 
+    st.success(f"Recommended Lot: {recommended_lots:.2f}")
+
     st.divider()
     asset_dict = {"XAUUSD": "GC=F", "US30": "^DJI", "GBPUSD": "GBPUSD=X"}
     choice = st.selectbox("Market", list(asset_dict.keys()))
@@ -72,7 +83,7 @@ if active_df is not None:
     arrow = "▲" if power_up else "▼"
     arrow_clr = "#00FF00" if power_up else "#FF0000"
     
-    # Triple-Lock Logic
+    # Triple-Lock Logic (All TFs must agree)
     confluence = (b1 + b5 + b15)
     if abs(confluence) == 3 and last['ADX'] > 25 and power_up:
         signal_text = "🚀 LOCKED BUY" if confluence == 3 else "📉 LOCKED SELL"
@@ -86,18 +97,29 @@ if active_df is not None:
         st.markdown(f"### ⚡ TREND POWER: {last['ADX']:.1f}% <span style='color:{arrow_clr}'>{arrow}</span>", unsafe_allow_html=True)
         st.progress(min(last['ADX']/100, 1.0))
 
-# 6. CHARTING WITH SESSION OVERLAYS
+# 6. CHARTING WITH SESSION & LIQUIDITY OVERLAYS
 if active_df is not None:
     fig = make_subplots(rows=2, cols=1, shared_xaxes=True, vertical_spacing=0.03, row_heights=[0.7, 0.3])
+    
+    # Main Candle Chart
     fig.add_trace(go.Candlestick(x=active_df.index, open=active_df['Open'], high=active_df['High'], low=active_df['Low'], close=active_df['Close'], name="Price"), row=1, col=1)
     fig.add_trace(go.Scatter(x=active_df.index, y=active_df['VWAP'], line=dict(color='orange', width=2), name="VWAP"), row=1, col=1)
     
-    # London & NY Shading (EAT)
+    # ASIA LIQUIDITY ZONES (03:00 - 09:00 EAT)
+    asia_range = active_df.between_time('03:00', '09:00')
+    if not asia_range.empty:
+        a_high, a_low = asia_range['High'].max(), asia_range['Low'].min()
+        fig.add_hline(y=a_high, line_dash="dot", line_color="cyan", annotation_text="ASIA HIGH")
+        fig.add_hline(y=a_low, line_dash="dot", line_color="magenta", annotation_text="ASIA LOW")
+
+    # SESSION SHADING (London & NY in EAT)
     for i in range(0, len(active_df), 5):
         dt = active_df.index[i].astimezone(pytz.timezone('Africa/Nairobi'))
         if 10 <= dt.hour < 18: fig.add_vrect(x0=dt, x1=dt, fillcolor="blue", opacity=0.02, layer="below", line_width=0)
         if 15 <= dt.hour < 23: fig.add_vrect(x0=dt, x1=dt, fillcolor="green", opacity=0.02, layer="below", line_width=0)
 
+    # MACD SUBPLOT
     fig.add_trace(go.Bar(x=active_df.index, y=active_df['MACD_H'], name="MACD"), row=2, col=1)
+    
     fig.update_layout(height=800, template="plotly_dark", xaxis_rangeslider_visible=False)
     st.plotly_chart(fig, use_container_width=True)
