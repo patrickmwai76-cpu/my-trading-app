@@ -8,9 +8,9 @@ import pytz
 from datetime import datetime
 
 # 1. PAGE SETUP
-st.set_page_config(page_title="PATRO AI PRO V11.4", layout="wide")
+st.set_page_config(page_title="PATRO AI PRO V11.5", layout="wide")
 
-# 2. DATA ENGINE
+# 2. DATA ENGINE (v11.5: Added Institutional Volume Logic)
 @st.cache_data(ttl=30)
 def get_patro_data(ticker, interval):
     try:
@@ -23,14 +23,20 @@ def get_patro_data(ticker, interval):
         macd = ta.macd(df['Close'])
         df['MACD_H'] = macd.iloc[:, 1]
         df['ADX'] = ta.adx(df['High'], df['Low'], df['Close'])['ADX_14']
+        
+        # --- NEW: VOLUME SPIKE ENGINE ---
+        df['Vol_Avg'] = df['Volume'].rolling(window=20).mean()
+        # Highlighting bars 2.5x the average volume (Institutional Entry)
+        df['Is_Spike'] = df['Volume'] > (df['Vol_Avg'] * 2.5)
+        
         return df.dropna()
     except: return None
 
 # 3. SIDEBAR: SOP, NEWS & RISK
 with st.sidebar:
-    st.title("🌌 PATRO V11.4")
+    st.title("🌌 PATRO V11.5")
     
-    # NEWS ALERT BOX (NFP UPDATED)
+    # NEWS ALERT BOX
     st.warning("⚠️ **HIGH IMPACT NEWS**")
     st.markdown("""
     **Event:** US Non-Farm Payrolls (NFP)  
@@ -52,7 +58,6 @@ with st.sidebar:
     risk_pct = st.slider("Risk Per Trade %", 0.5, 5.0, 1.0)
     stop_pips = st.number_input("Stop Loss (Pips/Points)", value=30)
     
-    # Lot calculation logic
     risk_dollars = balance * (risk_pct / 100)
     recommended_lots = risk_dollars / (stop_pips * 10) 
     st.success(f"Recommended Lot: {recommended_lots:.2f}")
@@ -83,13 +88,11 @@ if active_df is not None:
     arrow = "▲" if power_up else "▼"
     arrow_clr = "#00FF00" if power_up else "#FF0000"
     
-    # Triple-Lock Logic (All TFs must agree)
     confluence = (b1 + b5 + b15)
     if abs(confluence) == 3 and last['ADX'] > 25 and power_up:
         signal_text = "🚀 LOCKED BUY" if confluence == 3 else "📉 LOCKED SELL"
         signal_clr = "#00FF00" if confluence == 3 else "#FF0000"
 
-    # Dynamic Header Display
     c1, c2 = st.columns([3, 2])
     with c1:
         st.markdown(f"<h1 style='color:{signal_clr}; font-size: 50px;'>{signal_text}</h1>", unsafe_allow_html=True)
@@ -97,7 +100,7 @@ if active_df is not None:
         st.markdown(f"### ⚡ TREND POWER: {last['ADX']:.1f}% <span style='color:{arrow_clr}'>{arrow}</span>", unsafe_allow_html=True)
         st.progress(min(last['ADX']/100, 1.0))
 
-# 6. CHARTING WITH SESSION & LIQUIDITY OVERLAYS
+# 6. CHARTING WITH SESSION, LIQUIDITY & VOLUME SPIKES
 if active_df is not None:
     fig = make_subplots(rows=2, cols=1, shared_xaxes=True, vertical_spacing=0.03, row_heights=[0.7, 0.3])
     
@@ -111,6 +114,13 @@ if active_df is not None:
         a_high, a_low = asia_range['High'].max(), asia_range['Low'].min()
         fig.add_hline(y=a_high, line_dash="dot", line_color="cyan", annotation_text="ASIA HIGH")
         fig.add_hline(y=a_low, line_dash="dot", line_color="magenta", annotation_text="ASIA LOW")
+        
+        # --- NEW: BREAKOUT ALERT LOGIC ---
+        curr_price = active_df.iloc[-1]['Close']
+        if curr_price > a_high:
+            st.toast(f"🚨 BREAKOUT ABOVE ASIA HIGH: {choice}", icon="🚀")
+        elif curr_price < a_low:
+            st.toast(f"🚨 BREAKOUT BELOW ASIA LOW: {choice}", icon="📉")
 
     # SESSION SHADING (London & NY in EAT)
     for i in range(0, len(active_df), 5):
@@ -118,7 +128,10 @@ if active_df is not None:
         if 10 <= dt.hour < 18: fig.add_vrect(x0=dt, x1=dt, fillcolor="blue", opacity=0.02, layer="below", line_width=0)
         if 15 <= dt.hour < 23: fig.add_vrect(x0=dt, x1=dt, fillcolor="green", opacity=0.02, layer="below", line_width=0)
 
-    # MACD SUBPLOT
+    # --- UPDATED: MACD & VOLUME SPIKE SUBPLOT ---
+    # Bars turn Bright Yellow if they are Institutional Spikes
+    v_colors = ['#FFFF00' if spike else '#444444' for spike in active_df['Is_Spike']]
+    fig.add_trace(go.Bar(x=active_df.index, y=active_df['Volume'], marker_color=v_colors, name="Volume/Whale"), row=2, col=1)
     fig.add_trace(go.Bar(x=active_df.index, y=active_df['MACD_H'], name="MACD"), row=2, col=1)
     
     fig.update_layout(height=800, template="plotly_dark", xaxis_rangeslider_visible=False)
