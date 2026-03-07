@@ -5,7 +5,7 @@ import yfinance as yf
 import plotly.graph_objects as go
 from plotly.subplots import make_subplots
 
-# --- 1. PREMIUM PAGE SETUP ---
+# --- 1. PREMIUM INTERFACE ---
 st.set_page_config(page_title="PATRO AI PRO V11.6", layout="wide", initial_sidebar_state="expanded")
 
 st.markdown("""
@@ -40,10 +40,10 @@ def get_patro_data(ticker, interval):
         df['MACD_H'] = macd['MACDh_12_26_9']
         df['RSI'] = ta.rsi(df['Close'], length=14)
         
-        # SIGNAL FILTER (Trend Logic)
+        # TREND & SIGNAL LOGIC
         df['Raw'] = 0
-        df.loc[(df['Close'] > df['VWAP']) & (df['MACD_H'] > 0) & (df['ADX'] > 25), 'Raw'] = 1
-        df.loc[(df['Close'] < df['VWAP']) & (df['MACD_H'] < 0) & (df['ADX'] > 25), 'Raw'] = -1
+        df.loc[(df['Close'] > df['VWAP']) & (df['MACD_H'] > 0) & (df['ADX'] > 22), 'Raw'] = 1
+        df.loc[(df['Close'] < df['VWAP']) & (df['MACD_H'] < 0) & (df['ADX'] > 22), 'Raw'] = -1
         df['Entry'] = df['Raw'].diff().fillna(0)
         return df.dropna()
     except: return None
@@ -51,28 +51,28 @@ def get_patro_data(ticker, interval):
 # --- 3. INSTITUTIONAL SIDEBAR ---
 with st.sidebar:
     st.title("🌌 PATRO V11.6")
-    st.error("⚠️ **HIGH IMPACT NEWS**\nCheck ForexFactory (CPI/NFP)")
+    st.error("⚠️ **NEWS WATCH**\nCheck for CPI/NFP releases.")
     
     st.divider()
     st.markdown("### 📋 INSTITUTIONAL SOP")
-    st.checkbox("Trend Matrix Confluence", value=True)
-    st.checkbox("Price Action near VWAP", value=True)
-    st.checkbox("Volume Confirmation", value=True)
-    st.checkbox("Momentum Guard (MACD/RSI)", value=True)
+    st.checkbox("Trend Confluence", value=True)
+    st.checkbox("VWAP Proximity", value=True)
+    st.checkbox("Volume Spike", value=True)
+    st.checkbox("Momentum Guard", value=True)
     
     st.divider()
     st.markdown("### 🧮 RISK CALCULATOR")
-    balance = st.number_input("Account Balance ($)", value=1000)
-    risk_pct = st.slider("Risk Per Trade %", 0.5, 5.0, 1.0)
-    sl_pips = st.number_input("Stop Loss (Pips)", value=30)
+    balance = st.number_input("Balance ($)", value=1000)
+    risk_pct = st.slider("Risk %", 0.5, 5.0, 1.0)
+    sl_pips = st.number_input("Stop Loss Pips", value=30)
     
-    # JustMarkets Lot Logic (1 lot = $10/pip on Gold)
+    # JustMarkets Lot Calculation
     lots = (balance * (risk_pct/100)) / (sl_pips * 10) if sl_pips > 0 else 0.01
     st.success(f"Recommended Lot: **{lots:.2f}**")
 
     st.divider()
     asset_dict = {"XAUUSD": "GC=F", "US30": "^DJI", "GBPUSD": "GBPUSD=X"}
-    choice = st.selectbox("Asset", list(asset_dict.keys()))
+    choice = st.selectbox("Market Asset", list(asset_dict.keys()))
     tf = st.radio("Timeframe", ["1m", "5m", "15m"], index=1, horizontal=True)
 
 # --- 4. MAIN DASHBOARD ---
@@ -83,29 +83,28 @@ if data is not None:
     
     # POWER & TREND CALCULATION
     trend_state = "BULLISH" if last['Close'] > last['VWAP'] else "BEARISH"
-    power_score = last['ADX']
+    power_val = last['ADX']
     status_clr = "#00FF88" if last['Raw'] == 1 else "#FF3366" if last['Raw'] == -1 else "#777"
     status_txt = "LOCKED BUY" if last['Raw'] == 1 else "LOCKED SELL" if last['Raw'] == -1 else "SCANNING..."
 
-    # Top Metrics Bar
-    m1, m2, m3 = st.columns(3)
-    m1.metric("TREND", trend_state, delta=None)
-    m2.metric("POWER", f"{power_score:.1f}%", delta="Strong" if power_score > 25 else "Weak")
-    m3.metric("RSI", f"{last['RSI']:.0f}")
+    # Top Metric Bar
+    col1, col2, col3 = st.columns(3)
+    col1.metric("TREND", trend_state, delta=None)
+    col2.metric("MARKET POWER", f"{power_val:.1f}%", delta="Strong" if power_val > 25 else "Weak")
+    col3.metric("RSI", f"{last['RSI']:.0f}")
 
-    # Video-Look Header
     st.markdown(f"""
         <div class="signal-card" style="border-top: 5px solid {status_clr};">
-            <h1 style="color: {status_clr}; font-size: 55px; margin: 0; font-weight: 800;">{status_txt}</h1>
+            <h1 style="color: {status_clr}; font-size: 50px; margin: 0; font-weight: 800;">{status_txt}</h1>
             <p style="opacity:0.5; letter-spacing:3px;">JUSTMARKETS {choice}.m | V11.6 PRO ENGINE</p>
         </div>
     """, unsafe_allow_html=True)
 
-    # Professional Charting
+    # Charting (Candles + VWAP + SMA)
     fig = make_subplots(rows=2, cols=1, shared_xaxes=True, vertical_spacing=0.03, row_heights=[0.7, 0.3])
     fig.add_trace(go.Candlestick(x=data.index, open=data['Open'], high=data['High'], low=data['Low'], close=data['Close'], name="Price"), row=1, col=1)
     
-    # Entry Markers (Single Arrow Logic)
+    # Entry Markers
     buys = data[data['Entry'] == 1]; sells = data[data['Entry'] == -1]
     fig.add_trace(go.Scatter(x=buys.index, y=buys['Low']*0.999, mode="markers+text", text="BUY", textposition="bottom center", marker=dict(symbol="triangle-up", size=15, color="#00FF88")), row=1, col=1)
     fig.add_trace(go.Scatter(x=sells.index, y=sells['High']*1.001, mode="markers+text", text="SELL", textposition="top center", marker=dict(symbol="triangle-down", size=15, color="#FF3366")), row=1, col=1)
@@ -113,7 +112,7 @@ if data is not None:
     fig.add_trace(go.Scatter(x=data.index, y=data['VWAP'], line=dict(color='orange', width=2), name="VWAP"), row=1, col=1)
     fig.add_trace(go.Scatter(x=data.index, y=data['SMA200'], line=dict(color='white', width=1, dash='dot'), name="SMA 200"), row=1, col=1)
     
-    # Row 2: Momentum
+    # MACD Histogram
     h_clrs = ['#00FF88' if v >= 0 else '#FF3366' for v in data['MACD_H']]
     fig.add_trace(go.Bar(x=data.index, y=data['MACD_H'], marker_color=h_clrs, name="MACD"), row=2, col=1)
 
