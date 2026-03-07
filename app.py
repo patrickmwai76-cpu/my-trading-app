@@ -4,82 +4,112 @@ import pandas_ta as ta
 import yfinance as yf
 import plotly.graph_objects as go
 from plotly.subplots import make_subplots
-from datetime import datetime
 
-# --- 1. PREMIUM PAGE SETUP ---
+# --- 1. PREMIUM CLOUD UI ---
 st.set_page_config(page_title="PATRO AI PRO V11.6", layout="wide", initial_sidebar_state="expanded")
 
-# Glassmorphism & Neon CSS
 st.markdown("""
     <style>
     .stApp { background-color: #050505; color: white; }
     header, footer, #MainMenu {visibility: hidden;}
-    
     .signal-card {
         background: rgba(255, 255, 255, 0.03);
         backdrop-filter: blur(20px);
         border: 1px solid rgba(255, 255, 255, 0.1);
         border-radius: 25px;
-        padding: 30px;
-        text-align: center;
-        box-shadow: 0 15px 35px rgba(0,0,0,0.8);
-        margin-bottom: 20px;
+        padding: 30px; text-align: center; margin-bottom: 20px;
     }
-    
-    /* Sidebar Styling */
     section[data-testid="stSidebar"] { background-color: #0a0a0a !important; border-right: 1px solid #222; }
-    .stCheckbox { font-size: 12px !important; }
     </style>
     """, unsafe_allow_html=True)
 
-# --- 2. DATA ENGINE (Cloud Stable) ---
+# --- 2. THE STABLE DATA ENGINE ---
 @st.cache_data(ttl=20)
 def get_patro_data(ticker, interval):
     try:
+        # Requesting 5d ensures enough candles for SMA 200
         df = yf.download(ticker, period="5d", interval=interval, auto_adjust=True, progress=False)
         if df.empty: return None
+        
+        # 🚨 THE "BLACK SCREEN" FIX: Flatten MultiIndex columns
         if isinstance(df.columns, pd.MultiIndex): 
             df.columns = df.columns.get_level_values(0)
         
-        # Technicals
+        # --- TECHNICAL INDICATORS ---
         df['VWAP'] = ta.vwap(df['High'], df['Low'], df['Close'], df['Volume'])
         df['SMA200'] = ta.sma(df['Close'], length=200)
+        df['RSI'] = ta.rsi(df['Close'], length=14)
         df['ADX'] = ta.adx(df['High'], df['Low'], df['Close'])['ADX_14']
         macd = ta.macd(df['Close'])
         df['MACD_H'] = macd['MACDh_12_26_9']
-        df['RSI'] = ta.rsi(df['Close'], length=14)
         
         # Signal Logic (Clean Filter)
         df['Raw'] = 0
-        df.loc[(df['Close'] > df['VWAP']) & (df['MACD_H'] > 0) & (df['ADX'] > 28), 'Raw'] = 1
-        df.loc[(df['Close'] < df['VWAP']) & (df['MACD_H'] < 0) & (df['ADX'] > 28), 'Raw'] = -1
+        df.loc[(df['Close'] > df['VWAP']) & (df['MACD_H'] > 0) & (df['ADX'] > 25), 'Raw'] = 1
+        df.loc[(df['Close'] < df['VWAP']) & (df['MACD_H'] < 0) & (df['ADX'] > 25), 'Raw'] = -1
         df['Entry'] = df['Raw'].diff().fillna(0)
         
         return df.dropna()
-    except: return None
+    except Exception as e:
+        st.error(f"Waiting for Data... ({e})")
+        return None
 
-# --- 3. THE INSTITUTIONAL SIDEBAR ---
+# --- 3. RESTORED INSTITUTIONAL SIDEBAR ---
 with st.sidebar:
     st.title("🌌 PATRO V11.6")
-    st.error("⚠️ **HIGH IMPACT NEWS**\nCheck ForexFactory for NFP/CPI.")
+    st.error("⚠️ **NEWS WATCH**\nCheck for CPI/NFP releases.")
     
     st.divider()
     st.markdown("### 📋 INSTITUTIONAL SOP")
-    sop1 = st.checkbox("Trend Matrix Confluence", value=True)
-    sop2 = st.checkbox("Price Action near VWAP", value=True)
-    sop3 = st.checkbox("Volume Confirmation", value=True)
-    sop4 = st.checkbox("Momentum Guard (MACD/RSI)", value=True)
+    st.checkbox("Trend Confluence", value=True)
+    st.checkbox("VWAP Proximity", value=True)
+    st.checkbox("Volume Spike", value=True)
     
     st.divider()
     st.markdown("### 🧮 RISK CALCULATOR")
-    balance = st.number_input("Account Balance ($)", value=1000)
-    risk_pct = st.slider("Risk Per Trade %", 0.5, 5.0, 1.0)
-    sl_pips = st.number_input("Stop Loss (Pips)", value=30)
+    balance = st.number_input("Balance ($)", value=1000)
+    risk_pct = st.slider("Risk %", 0.5, 5.0, 1.0)
+    sl_pips = st.number_input("Stop Loss Pips", value=30)
     
-    # Lot Calculation Logic
-    risk_amount = balance * (risk_pct / 100)
-    rec_lots = risk_amount / (sl_pips * 10) if sl_pips > 0 else 0.01
-    st.success(f"Recommended Lot: **{rec_lots:.2f}**")
+    # Calculate Lot Size for XAUUSD.m
+    lots = (balance * (risk_pct/100)) / (sl_pips * 10) if sl_pips > 0 else 0.01
+    st.success(f"Recommended Lot: **{lots:.2f}**")
 
     st.divider()
-    asset_map = {"XAUUSD": "GC=F", "US30": "^DJI", "GBPUSD": "GBPUSD=X"}
+    asset_dict = {"XAUUSD": "GC=F", "US30": "^DJI", "GBPUSD": "GBPUSD=X"}
+    choice = st.selectbox("Market Asset", list(asset_dict.keys()))
+    tf = st.radio("Timeframe", ["1m", "5m", "15m"], index=1, horizontal=True)
+
+# --- 4. MAIN INTERFACE ---
+data = get_patro_data(asset_dict[choice], tf)
+
+if data is not None:
+    last = data.iloc[-1]
+    status_clr = "#00FF88" if last['Raw'] == 1 else "#FF3366" if last['Raw'] == -1 else "#777"
+    status_txt = "LOCKED BUY" if last['Raw'] == 1 else "LOCKED SELL" if last['Raw'] == -1 else "SCANNING..."
+
+    st.markdown(f"""
+        <div class="signal-card" style="border-top: 5px solid {status_clr};">
+            <h1 style="color: {status_clr}; font-size: 55px; margin: 0; font-weight: 800;">{status_txt}</h1>
+            <p style="opacity:0.5; letter-spacing:3px;">JUSTMARKETS {choice}.m | ADX: {last['ADX']:.1f}%</p>
+        </div>
+    """, unsafe_allow_html=True)
+
+    # SUBPLOTS
+    fig = make_subplots(rows=2, cols=1, shared_xaxes=True, vertical_spacing=0.03, row_heights=[0.7, 0.3])
+    fig.add_trace(go.Candlestick(x=data.index, open=data['Open'], high=data['High'], low=data['Low'], close=data['Close'], name="Price"), row=1, col=1)
+    
+    # Arrows
+    buys = data[data['Entry'] == 1]; sells = data[data['Entry'] == -1]
+    fig.add_trace(go.Scatter(x=buys.index, y=buys['Low']*0.999, mode="markers+text", text="BUY", textposition="bottom center", marker=dict(symbol="triangle-up", size=15, color="#00FF88")), row=1, col=1)
+    fig.add_trace(go.Scatter(x=sells.index, y=sells['High']*1.001, mode="markers+text", text="SELL", textposition="top center", marker=dict(symbol="triangle-down", size=15, color="#FF3366")), row=1, col=1)
+
+    fig.add_trace(go.Scatter(x=data.index, y=data['VWAP'], line=dict(color='orange', width=2), name="VWAP"), row=1, col=1)
+    fig.add_trace(go.Scatter(x=data.index, y=data['SMA200'], line=dict(color='white', width=1, dash='dot'), name="SMA 200"), row=1, col=1)
+    
+    # Momentum (MACD)
+    h_clrs = ['#00FF88' if v >= 0 else '#FF3366' for v in data['MACD_H']]
+    fig.add_trace(go.Bar(x=data.index, y=data['MACD_H'], marker_color=h_clrs, name="MACD"), row=2, col=1)
+
+    fig.update_layout(height=800, template="plotly_dark", xaxis_rangeslider_visible=False, margin=dict(l=0,r=0,t=0,b=0))
+    st.plotly_chart(fig, use_container_width=True)
