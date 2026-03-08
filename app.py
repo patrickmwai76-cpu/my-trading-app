@@ -4,26 +4,72 @@ import pandas_ta as ta
 import yfinance as yf
 import plotly.graph_objects as go
 from plotly.subplots import make_subplots
+import MetaTrader5 as mt5
 
-# --- 1. PREMIUM INTERFACE ---
+# --- 1. PREMIUM PAGE SETUP ---
 st.set_page_config(page_title="PATRO AI PRO V11.6", layout="wide", initial_sidebar_state="expanded")
 
 st.markdown("""
     <style>
     .stApp { background-color: #050505; color: white; }
     header, footer, #MainMenu {visibility: hidden;}
-    .signal-card {
+    
+    .glass-card {
         background: rgba(255, 255, 255, 0.03);
-        backdrop-filter: blur(20px);
+        backdrop-filter: blur(15px);
         border: 1px solid rgba(255, 255, 255, 0.1);
         border-radius: 20px;
-        padding: 25px; text-align: center; margin-bottom: 20px;
+        padding: 25px;
+        text-align: center;
+        box-shadow: 0 8px 32px rgba(0,0,0,0.8);
+        margin-bottom: 20px;
+    }
+    
+    div.stButton > button {
+        border-radius: 12px !important;
+        font-weight: 900 !important;
+        height: 3.5em !important;
+        width: 100% !important;
+        transition: 0.3s !important;
+        text-transform: uppercase;
     }
     section[data-testid="stSidebar"] { background-color: #0a0a0a !important; border-right: 1px solid #222; }
     </style>
     """, unsafe_allow_html=True)
 
-# --- 2. THE STABLE ENGINE ---
+# --- 2. SILENT JUSTMARKETS EXECUTION ENGINE ---
+def place_justmarket_trade(symbol, order_type, volume=0.01):
+    # Initializes silently without logging to screen
+    if not mt5.initialize():
+        return
+    
+    # JustMarkets Symbol Fix (.m suffix)
+    symbol_name = f"{symbol}.m" if ".m" not in symbol else symbol
+    if "GC=F" in symbol: symbol_name = "XAUUSD.m"
+    
+    mt5.symbol_select(symbol_name, True)
+    tick = mt5.symbol_info_tick(symbol_name)
+    if tick is None: return
+    
+    price = tick.ask if order_type == mt5.ORDER_TYPE_BUY else tick.bid
+    
+    request = {
+        "action": mt5.TRADE_ACTION_DEAL,
+        "symbol": symbol_name,
+        "volume": volume,
+        "type": order_type,
+        "price": price,
+        "magic": 1162026,
+        "comment": "PATRO AI V11.6 EXEC",
+        "type_time": mt5.ORDER_TIME_GTC,
+        "type_filling": mt5.ORDER_FILLING_IOC,
+    }
+    
+    result = mt5.order_send(request)
+    if result.retcode == mt5.TRADE_RETCODE_DONE:
+        st.balloons()
+
+# --- 3. DATA ENGINE ---
 @st.cache_data(ttl=20)
 def get_patro_data(ticker, interval):
     try:
@@ -40,7 +86,7 @@ def get_patro_data(ticker, interval):
         df['MACD_H'] = macd['MACDh_12_26_9']
         df['RSI'] = ta.rsi(df['Close'], length=14)
         
-        # TREND & SIGNAL LOGIC
+        # SIGNAL LOGIC
         df['Raw'] = 0
         df.loc[(df['Close'] > df['VWAP']) & (df['MACD_H'] > 0) & (df['ADX'] > 22), 'Raw'] = 1
         df.loc[(df['Close'] < df['VWAP']) & (df['MACD_H'] < 0) & (df['ADX'] > 22), 'Raw'] = -1
@@ -48,7 +94,7 @@ def get_patro_data(ticker, interval):
         return df.dropna()
     except: return None
 
-# --- 3. INSTITUTIONAL SIDEBAR ---
+# --- 4. INSTITUTIONAL SIDEBAR ---
 with st.sidebar:
     st.title("🌌 PATRO V11.6")
     st.error("⚠️ **NEWS WATCH**\nCheck for CPI/NFP releases.")
@@ -58,7 +104,6 @@ with st.sidebar:
     st.checkbox("Trend Confluence", value=True)
     st.checkbox("VWAP Proximity", value=True)
     st.checkbox("Volume Spike", value=True)
-    st.checkbox("Momentum Guard", value=True)
     
     st.divider()
     st.markdown("### 🧮 RISK CALCULATOR")
@@ -66,7 +111,6 @@ with st.sidebar:
     risk_pct = st.slider("Risk %", 0.5, 5.0, 1.0)
     sl_pips = st.number_input("Stop Loss Pips", value=30)
     
-    # JustMarkets Lot Calculation
     lots = (balance * (risk_pct/100)) / (sl_pips * 10) if sl_pips > 0 else 0.01
     st.success(f"Recommended Lot: **{lots:.2f}**")
 
@@ -75,36 +119,45 @@ with st.sidebar:
     choice = st.selectbox("Market Asset", list(asset_dict.keys()))
     tf = st.radio("Timeframe", ["1m", "5m", "15m"], index=1, horizontal=True)
 
-# --- 4. MAIN DASHBOARD ---
+# --- 5. MAIN DASHBOARD ---
 data = get_patro_data(asset_dict[choice], tf)
 
 if data is not None:
     last = data.iloc[-1]
     
-    # POWER & TREND CALCULATION
-    trend_state = "BULLISH" if last['Close'] > last['VWAP'] else "BEARISH"
-    power_val = last['ADX']
+    # AI CONFIDENCE CALCULATION
+    # Score 1m, 5m, and indicators for a percentage
+    conf_score = 0
+    if last['Close'] > last['VWAP']: conf_score += 25
+    if last['MACD_H'] > 0: conf_score += 25
+    if last['ADX'] > 25: conf_score += 25
+    if last['RSI'] > 50 and last['RSI'] < 70: conf_score += 25
+    
     status_clr = "#00FF88" if last['Raw'] == 1 else "#FF3366" if last['Raw'] == -1 else "#777"
-    status_txt = "LOCKED BUY" if last['Raw'] == 1 else "LOCKED SELL" if last['Raw'] == -1 else "SCANNING..."
-
-    # Top Metric Bar
-    col1, col2, col3 = st.columns(3)
-    col1.metric("TREND", trend_state, delta=None)
-    col2.metric("MARKET POWER", f"{power_val:.1f}%", delta="Strong" if power_val > 25 else "Weak")
-    col3.metric("RSI", f"{last['RSI']:.0f}")
-
+    
+    # AI Confidence Header
     st.markdown(f"""
-        <div class="signal-card" style="border-top: 5px solid {status_clr};">
-            <h1 style="color: {status_clr}; font-size: 50px; margin: 0; font-weight: 800;">{status_txt}</h1>
-            <p style="opacity:0.5; letter-spacing:3px;">JUSTMARKETS {choice}.m | V11.6 PRO ENGINE</p>
+        <div class="glass-card" style="border-bottom: 4px solid {status_clr};">
+            <p style="color:#666; letter-spacing:3px; font-size:10px; margin:0;">AI ANALYSIS CONFIDENCE</p>
+            <h1 style="color:{status_clr}; font-size:60px; margin:5px 0;">{conf_score}%</h1>
+            <p style="opacity:0.5; letter-spacing:2px;">JUSTMARKETS {choice}.m | V11.6 PRO ENGINE</p>
         </div>
     """, unsafe_allow_html=True)
 
-    # Charting (Candles + VWAP + SMA)
+    # EXECUTION BUTTONS
+    c1, c2 = st.columns(2)
+    with c1:
+        if st.button("🚀 EXECUTE BUY", use_container_width=True):
+            place_justmarket_trade(choice, mt5.ORDER_TYPE_BUY, lots)
+    with c2:
+        if st.button("📉 EXECUTE SELL", use_container_width=True, key="sell_btn"):
+            place_justmarket_trade(choice, mt5.ORDER_TYPE_SELL, lots)
+
+    # Charting
     fig = make_subplots(rows=2, cols=1, shared_xaxes=True, vertical_spacing=0.03, row_heights=[0.7, 0.3])
     fig.add_trace(go.Candlestick(x=data.index, open=data['Open'], high=data['High'], low=data['Low'], close=data['Close'], name="Price"), row=1, col=1)
     
-    # Entry Markers
+    # Entries
     buys = data[data['Entry'] == 1]; sells = data[data['Entry'] == -1]
     fig.add_trace(go.Scatter(x=buys.index, y=buys['Low']*0.999, mode="markers+text", text="BUY", textposition="bottom center", marker=dict(symbol="triangle-up", size=15, color="#00FF88")), row=1, col=1)
     fig.add_trace(go.Scatter(x=sells.index, y=sells['High']*1.001, mode="markers+text", text="SELL", textposition="top center", marker=dict(symbol="triangle-down", size=15, color="#FF3366")), row=1, col=1)
@@ -112,7 +165,7 @@ if data is not None:
     fig.add_trace(go.Scatter(x=data.index, y=data['VWAP'], line=dict(color='orange', width=2), name="VWAP"), row=1, col=1)
     fig.add_trace(go.Scatter(x=data.index, y=data['SMA200'], line=dict(color='white', width=1, dash='dot'), name="SMA 200"), row=1, col=1)
     
-    # MACD Histogram
+    # MACD
     h_clrs = ['#00FF88' if v >= 0 else '#FF3366' for v in data['MACD_H']]
     fig.add_trace(go.Bar(x=data.index, y=data['MACD_H'], marker_color=h_clrs, name="MACD"), row=2, col=1)
 
