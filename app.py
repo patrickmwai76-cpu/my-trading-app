@@ -5,8 +5,13 @@ import yfinance as yf
 import plotly.graph_objects as go
 from plotly.subplots import make_subplots
 import MetaTrader5 as mt5
+import logging
 
-# --- 1. PREMIUM PAGE SETUP ---
+# --- 1. SILENCE BACKGROUND LOGS ---
+# This prevents MT5 and Streamlit background logs from appearing
+logging.getLogger('streamlit').setLevel(logging.CRITICAL)
+
+# --- 2. PREMIUM PAGE SETUP ---
 st.set_page_config(page_title="PATRO AI PRO V11.6", layout="wide", initial_sidebar_state="expanded")
 
 st.markdown("""
@@ -37,9 +42,9 @@ st.markdown("""
     </style>
     """, unsafe_allow_html=True)
 
-# --- 2. SILENT JUSTMARKETS EXECUTION ENGINE ---
+# --- 3. SILENT JUSTMARKETS EXECUTION ENGINE ---
 def place_justmarket_trade(symbol, order_type, volume=0.01):
-    # Initializes silently without logging to screen
+    # Initializes silently - no messages printed to UI
     if not mt5.initialize():
         return
     
@@ -69,7 +74,7 @@ def place_justmarket_trade(symbol, order_type, volume=0.01):
     if result.retcode == mt5.TRADE_RETCODE_DONE:
         st.balloons()
 
-# --- 3. DATA ENGINE ---
+# --- 4. DATA ENGINE ---
 @st.cache_data(ttl=20)
 def get_patro_data(ticker, interval):
     try:
@@ -94,7 +99,7 @@ def get_patro_data(ticker, interval):
         return df.dropna()
     except: return None
 
-# --- 4. INSTITUTIONAL SIDEBAR ---
+# --- 5. INSTITUTIONAL SIDEBAR ---
 with st.sidebar:
     st.title("🌌 PATRO V11.6")
     st.error("⚠️ **NEWS WATCH**\nCheck for CPI/NFP releases.")
@@ -119,14 +124,13 @@ with st.sidebar:
     choice = st.selectbox("Market Asset", list(asset_dict.keys()))
     tf = st.radio("Timeframe", ["1m", "5m", "15m"], index=1, horizontal=True)
 
-# --- 5. MAIN DASHBOARD ---
+# --- 6. MAIN DASHBOARD ---
 data = get_patro_data(asset_dict[choice], tf)
 
 if data is not None:
     last = data.iloc[-1]
     
     # AI CONFIDENCE CALCULATION
-    # Score 1m, 5m, and indicators for a percentage
     conf_score = 0
     if last['Close'] > last['VWAP']: conf_score += 25
     if last['MACD_H'] > 0: conf_score += 25
