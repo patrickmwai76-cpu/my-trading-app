@@ -7,10 +7,10 @@ from plotly.subplots import make_subplots
 import logging
 import os
 
-# --- 1. SYSTEM CHECKS & CONDITIONAL IMPORTS ---
+# --- 1. SYSTEM CHECKS & CLOUD COMPATIBILITY ---
 logging.getLogger('yfinance').setLevel(logging.CRITICAL)
 
-# Check for Windows Audio (Prevents Cloud Crash)
+# Check for Windows Audio (Prevents Streamlit Cloud Crash)
 WINDOWS_AUDIO = False
 if os.name == 'nt':
     try:
@@ -19,14 +19,14 @@ if os.name == 'nt':
     except ImportError:
         pass
 
-# MetaTrader 5 Check
+# Check for MetaTrader 5 (Only available on local Windows)
 try:
     import MetaTrader5 as mt5
     MT5_AVAILABLE = True
 except ImportError:
     MT5_AVAILABLE = False
 
-# --- 2. PREMIUM INTERFACE SETUP ---
+# --- 2. PREMIUM UI CONFIGURATION ---
 st.set_page_config(page_title="PATRO AI PRO V11.6", layout="wide", initial_sidebar_state="expanded")
 
 st.markdown("""
@@ -37,145 +37,140 @@ st.markdown("""
         background: rgba(255, 255, 255, 0.03);
         backdrop-filter: blur(15px);
         border: 1px solid rgba(255, 255, 255, 0.1);
-        border-radius: 20px;
-        padding: 20px; text-align: center; margin-bottom: 20px;
-        box-shadow: 0 8px 32px rgba(0,0,0,0.8);
+        border-radius: 15px;
+        padding: 15px; text-align: center; margin-bottom: 10px;
     }
     div.stButton > button {
-        border-radius: 12px !important; font-weight: 900 !important;
-        height: 3.5em !important; width: 100% !important;
-        text-transform: uppercase; transition: 0.3s;
+        border-radius: 10px !important; font-weight: 800 !important;
+        height: 3em !important; width: 100% !important;
     }
     button[key="buy_btn"] { background: linear-gradient(135deg, #00FF88 0%, #008DFF 100%) !important; color: black !important; }
     button[key="sell_btn"] { background: linear-gradient(135deg, #FF3366 0%, #FF8A00 100%) !important; color: white !important; }
-    section[data-testid="stSidebar"] { background-color: #0a0a0a !important; border-right: 1px solid #222; }
     </style>
     """, unsafe_allow_html=True)
 
-# --- 3. EXECUTION ENGINE ---
-def place_justmarket_trade(symbol, order_type, volume=0.01):
+# --- 3. EXECUTION ENGINE (LOCAL ONLY) ---
+def execute_trade(symbol, order_type, volume=0.01):
     if not MT5_AVAILABLE:
-        st.warning("⚠️ Local Windows MT5 required for execution.")
+        st.error("⚠️ Trade Execution requires local Windows MT5.")
         return
     if not mt5.initialize(): return
-    symbol_name = "XAUUSD.m" if "GC=F" in symbol else f"{symbol}.m"
-    mt5.symbol_select(symbol_name, True)
-    tick = mt5.symbol_info_tick(symbol_name)
+    # Symbol mapping for JustMarkets/Exness
+    s_name = "XAUUSD.m" if "GC=F" in symbol else f"{symbol}.m"
+    mt5.symbol_select(s_name, True)
+    tick = mt5.symbol_info_tick(s_name)
     if tick:
         request = {
             "action": mt5.TRADE_ACTION_DEAL,
-            "symbol": symbol_name,
+            "symbol": s_name,
             "volume": float(volume),
             "type": order_type,
             "price": tick.ask if order_type == 0 else tick.bid,
             "magic": 1162026,
             "comment": "PATRO AI V11.6",
-            "type_time": mt5.ORDER_TIME_GTC,
             "type_filling": mt5.ORDER_FILLING_IOC,
         }
         mt5.order_send(request)
-        st.balloons()
+        st.toast(f"Order Sent: {s_name}")
 
-# --- 4. SIDEBAR INPUTS ---
-asset_dict = {"XAUUSD": "GC=F", "US30": "^DJI", "GBPUSD": "GBPUSD=X"}
+# --- 4. SIDEBAR SETTINGS ---
+asset_dict = {"XAUUSD": "GC=F", "GBPUSD": "GBPUSD=X", "US30": "^DJI"}
+
 with st.sidebar:
     st.title("🌌 PATRO V11.6")
-    choice = st.selectbox("Market Asset", list(asset_dict.keys()))
-    ticker = asset_dict[choice]
-
-    st.error("⚠️ **NEWS WATCH**\nInstitutional Volatility Alert.")
-    st.divider()
+    asset_choice = st.selectbox("Market Asset", list(asset_dict.keys()))
+    ticker = asset_dict[asset_choice]
     
+    st.divider()
     st.markdown("### 📋 INSTITUTIONAL SOP")
-    s1 = st.checkbox("MTF Confluence Check", value=True)
+    s1 = st.checkbox("MTF Confluence", value=True)
     s2 = st.checkbox("VWAP Proximity", value=True)
     s3 = st.checkbox("Volume Confirmation", value=True)
-    sop_count = sum([s1, s2, s3])
+    sop_score = sum([s1, s2, s3])
 
     st.divider()
-    st.markdown("### 🧮 RISK CALCULATOR")
-    balance = st.number_input("Balance ($)", value=1000)
     risk_pct = st.slider("Risk %", 0.5, 5.0, 1.0)
-    sl_pips = st.number_input("Stop Loss Pips", value=30)
-    lots = max((balance * (risk_pct/100)) / (sl_pips * 10), 0.01) if sl_pips > 0 else 0.01
-    st.success(f"Lot Size: **{lots:.2f}**")
+    lots = st.number_input("Lot Size", value=0.01, step=0.01)
     
     st.divider()
-    tf = st.radio("Main Chart TF", ["1m", "5m", "15m"], index=1, horizontal=True)
-    matrix_container = st.empty()
+    tf = st.radio("Chart Timeframe", ["1m", "5m", "15m"], index=1, horizontal=True)
+    matrix_spot = st.empty()
 
-# --- 5. THE LIVE ENGINE ---
-@st.fragment(run_every=7)
-def dashboard_engine():
-    # 5a. SIDEBAR MATRIX
-    matrix_data = []
-    for mtf in ["1m", "5m", "15m"]:
-        df_m = yf.download(ticker, period="1d", interval=mtf, progress=False)
-        if not df_m.empty:
-            if isinstance(df_m.columns, pd.MultiIndex): df_m.columns = df_m.columns.get_level_values(0)
-            vwap_m = ta.vwap(df_m['High'], df_m['Low'], df_m['Close'], df_m['Volume']).iloc[-1]
-            status = "🟢 BULL" if df_m['Close'].iloc[-1] > vwap_m else "🔴 BEAR"
-            matrix_data.append({"TF": mtf, "Status": status})
+# --- 5. DATA CLEANING UTILITY ---
+def clean_data(df):
+    """Flattens MultiIndex columns from yfinance 2025/2026 updates"""
+    if isinstance(df.columns, pd.MultiIndex):
+        df.columns = df.columns.get_level_values(0)
+    df.index = pd.to_datetime(df.index)
+    return df
+
+# --- 6. THE LIVE DASHBOARD ---
+@st.fragment(run_every="7s")
+def run_patro_engine():
+    # 6a. Trend Matrix Logic
+    matrix_results = []
+    for m in ["1m", "5m", "15m"]:
+        m_data = yf.download(ticker, period="1d", interval=m, progress=False)
+        if not m_data.empty:
+            m_data = clean_data(m_data)
+            vwap = ta.vwap(m_data['High'], m_data['Low'], m_data['Close'], m_data['Volume'])
+            if vwap is not None and not vwap.empty:
+                bias = "🟢 BULL" if m_data['Close'].iloc[-1] > vwap.iloc[-1] else "🔴 BEAR"
+                matrix_results.append({"TF": m, "Trend": bias})
     
-    with matrix_container:
+    with matrix_spot.container():
         st.markdown("### 📊 TREND MATRIX")
-        st.table(pd.DataFrame(matrix_data))
+        st.table(pd.DataFrame(matrix_results))
 
-    # 5b. MAIN DATA
-    data = yf.download(ticker, period="5d", interval=tf, auto_adjust=True, progress=False)
-    if data is not None and not data.empty:
-        if isinstance(data.columns, pd.MultiIndex): data.columns = data.columns.get_level_values(0)
+    # 6b. Main Analysis
+    main_df = yf.download(ticker, period="2d", interval=tf, progress=False)
+    if not main_df.empty:
+        main_df = clean_data(main_df)
         
-        # INDICATORS
-        data['VWAP'] = ta.vwap(data['High'], data['Low'], data['Close'], data['Volume'])
-        data['ADX'] = ta.adx(data['High'], data['Low'], data['Close'])['ADX_14']
-        macd = ta.macd(data['Close'])
-        data['MACD_H'] = macd['MACDh_12_26_9']
-        data['Vol_Avg'] = data['Volume'].rolling(window=20).mean()
-        data['Is_Spike'] = data['Volume'] > (data['Vol_Avg'] * 2.5)
+        # Indicators
+        main_df['VWAP'] = ta.vwap(main_df['High'], main_df['Low'], main_df['Close'], main_df['Volume'])
+        main_df['ADX'] = ta.adx(main_df['High'], main_df['Low'], main_df['Close'])['ADX_14']
+        macd = ta.macd(main_df['Close'])
+        main_df['MACD_H'] = macd['MACDh_12_26_9']
         
-        # AUDIO ALERT (Cloud Safe)
-        if data['Is_Spike'].iloc[-1] and WINDOWS_AUDIO:
-            try: winsound.Beep(1000, 400)
+        # Volume Spike Logic
+        vol_avg = main_df['Volume'].rolling(20).mean()
+        is_spike = main_df['Volume'].iloc[-1] > (vol_avg.iloc[-1] * 2.5)
+        
+        if is_spike and WINDOWS_AUDIO:
+            try: winsound.Beep(800, 300)
             except: pass
 
-        # ENTRY LOGIC
-        data['Raw'] = 0
-        data.loc[(data['Close'] > data['VWAP']) & (data['MACD_H'] > 0) & (data['ADX'] > 22), 'Raw'] = 1
-        data.loc[(data['Close'] < data['VWAP']) & (data['MACD_H'] < 0) & (data['ADX'] > 22), 'Raw'] = -1
+        # Score Calculation
+        last = main_df.iloc[-1]
+        tech_score = 0
+        current_side = "🟢 BULL" if last['Close'] > last['VWAP'] else "🔴 BEAR"
         
-        last = data.iloc[-1]
+        # Calculate matrix match
+        matches = sum(1 for x in matrix_results if x['Trend'] == current_side)
+        final_conf = int(((matches / 3) * 50) + ((sop_score / 3) * 30) + (20 if last['ADX'] > 25 else 0))
+
+        # UI Header
+        h1, h2 = st.columns(2)
+        with h1:
+            st.markdown(f'<div class="glass-card">CONFIDENCE<br><h1 style="color:#00FF88;">{final_conf}%</h1></div>', unsafe_allow_html=True)
+        with h2:
+            st.markdown(f'<div class="glass-card">ADX STRENGTH<br><h1>{int(last["ADX"])}</h1></div>', unsafe_allow_html=True)
+
+        # Execution Buttons
+        b1, b2 = st.columns(2)
+        with b1:
+            if st.button("🚀 BUY", key="buy_btn"): execute_trade(ticker, 0, lots)
+        with b2:
+            if st.button("📉 SELL", key="sell_btn"): execute_trade(ticker, 1, lots)
+
+        # Main Chart
+        fig = make_subplots(rows=2, cols=1, shared_xaxes=True, row_heights=[0.7, 0.3], vertical_spacing=0.05)
+        fig.add_trace(go.Candlestick(x=main_df.index, open=main_df['Open'], high=main_df['High'], low=main_df['Low'], close=main_df['Close'], name="Price"), row=1, col=1)
+        fig.add_trace(go.Scatter(x=main_df.index, y=main_df['VWAP'], line=dict(color='orange', width=1.5), name="VWAP"), row=1, col=1)
+        fig.add_trace(go.Bar(x=main_df.index, y=main_df['Volume'], name="Volume", marker_color="#333"), row=2, col=1)
         
-        # CONFIDENCE CALCULATION
-        current_bias = "🟢 BULL" if last['Raw'] == 1 else "🔴 BEAR" if last['Raw'] == -1 else None
-        bias_count = sum([1 for m in matrix_data if m['Status'] == current_bias]) if current_bias else 0
-        final_conf = int(((bias_count / 3) * 40) + ((sop_count / 3) * 40) + (20 if last['Raw'] != 0 else 0))
-        
-        adx_val = last['ADX']
-        strength, s_clr = ("STRONG", "#00FF88") if adx_val > 25 else ("WEAK", "#777")
-        status_clr = "#00FF88" if last['Raw'] == 1 else "#FF3366" if last['Raw'] == -1 else "#777"
+        fig.update_layout(height=600, template="plotly_dark", xaxis_rangeslider_visible=False, margin=dict(l=10,r=10,t=10,b=10))
+        st.plotly_chart(fig, use_container_width=True, key=f"chart_{asset_choice}")
 
-        # UI CARDS
-        sc, st_col = st.columns(2)
-        with sc:
-            st.markdown(f'<div class="glass-card" style="border-bottom:4px solid {status_clr};">AI CONFIDENCE<br><h1 style="color:{status_clr};">{final_conf}%</h1></div>', unsafe_allow_html=True)
-        with st_col:
-            st.markdown(f'<div class="glass-card" style="border-bottom:4px solid {s_clr};">STRENGTH<br><h1 style="color:{s_clr};">{int(adx_val)}</h1>{strength}</div>', unsafe_allow_html=True)
-
-        # BUTTONS
-        c1, c2 = st.columns(2)
-        with c1:
-            if st.button("🚀 EXECUTE BUY", key="buy_btn"): place_justmarket_trade(choice, 0, lots)
-        with c2:
-            if st.button("📉 EXECUTE SELL", key="sell_btn"): place_justmarket_trade(choice, 1, lots)
-
-        # CHART
-        fig = make_subplots(rows=2, cols=1, shared_xaxes=True, vertical_spacing=0.03, row_heights=[0.7, 0.3])
-        fig.add_trace(go.Candlestick(x=data.index, open=data['Open'], high=data['High'], low=data['Low'], close=data['Close'], name="Price"), row=1, col=1)
-        fig.add_trace(go.Scatter(x=data.index, y=data['VWAP'], line=dict(color='orange', width=2), name="VWAP"), row=1, col=1)
-        fig.add_trace(go.Bar(x=data.index, y=data['Volume'], marker_color=['#FFFF00' if s else '#333' for s in data['Is_Spike']]), row=2, col=1)
-
-        fig.update_layout(height=650, template="plotly_dark", xaxis_rangeslider_visible=False, margin=dict(l=0,r=0,t=0,b=0))
-        st.plotly_chart(fig, use_container_width=True, key=f"chart_{choice}")
-
-dashboard_engine()
+run_patro_engine()
