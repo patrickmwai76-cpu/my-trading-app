@@ -5,7 +5,7 @@ import yfinance as yf
 import plotly.graph_objects as go
 from plotly.subplots import make_subplots
 import logging
-import winsound  # <--- Added for Local Windows Audio Alerts
+import winsound  # <--- Local Windows Audio Alerts
 
 # --- 1. SILENT LOGGING & MT5 CHECK ---
 logging.getLogger('streamlit').setLevel(logging.CRITICAL)
@@ -124,7 +124,7 @@ def dashboard_engine():
         
         # AUDIO ALERT ON VOLUME SPIKE
         if data['Is_Spike'].iloc[-1]:
-            winsound.Beep(1000, 400) # (Frequency: 1000Hz, Duration: 400ms)
+            winsound.Beep(1000, 400) 
 
         # ENTRY LOGIC
         data['Raw'] = 0
