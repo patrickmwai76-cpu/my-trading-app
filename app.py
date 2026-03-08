@@ -64,26 +64,13 @@ def place_justmarket_trade(symbol, order_type, volume=0.01):
         mt5.order_send(request)
         st.balloons()
 
-# --- 4. PRE-FETCH TRENDS FOR SIDEBAR ---
+# --- 4. SIDEBAR INPUTS ---
 asset_dict = {"XAUUSD": "GC=F", "US30": "^DJI", "GBPUSD": "GBPUSD=X"}
 with st.sidebar:
     st.title("🌌 PATRO V11.6")
     choice = st.selectbox("Market Asset", list(asset_dict.keys()))
     ticker = asset_dict[choice]
-
-    # --- THE TREND MATRIX TABLE ---
-    st.markdown("### 📊 TREND MATRIX")
-    matrix_data = []
-    for mtf in ["1m", "5m", "15m"]:
-        df_m = yf.download(ticker, period="1d", interval=mtf, progress=False)
-        if not df_m.empty:
-            if isinstance(df_m.columns, pd.MultiIndex): df_m.columns = df_m.columns.get_level_values(0)
-            vwap_m = ta.vwap(df_m['High'], df_m['Low'], df_m['Close'], df_m['Volume']).iloc[-1]
-            status = "🟢 BULL" if df_m['Close'].iloc[-1] > vwap_m else "🔴 BEAR"
-            matrix_data.append({"TF": mtf, "Status": status})
     
-    st.table(pd.DataFrame(matrix_data))
-
     st.error("⚠️ **NEWS WATCH**\nUS Iran Conflict Impacting Gold.")
     st.divider()
     st.markdown("### 📋 INSTITUTIONAL SOP")
@@ -101,20 +88,37 @@ with st.sidebar:
     
     st.divider()
     tf = st.radio("Main Chart TF", ["1m", "5m", "15m"], index=1, horizontal=True)
+    
+    # Create an empty container in the sidebar for the Matrix to update into
+    matrix_container = st.empty()
 
 # --- 5. THE LIVE ENGINE ---
 @st.fragment(run_every=7)
 def dashboard_engine():
+    # 5a. UPDATE SIDEBAR MATRIX (Inside Fragment)
+    matrix_data = []
+    for mtf in ["1m", "5m", "15m"]:
+        df_m = yf.download(ticker, period="1d", interval=mtf, progress=False)
+        if not df_m.empty:
+            if isinstance(df_m.columns, pd.MultiIndex): df_m.columns = df_m.columns.get_level_values(0)
+            vwap_m = ta.vwap(df_m['High'], df_m['Low'], df_m['Close'], df_m['Volume']).iloc[-1]
+            status = "🟢 BULL" if df_m['Close'].iloc[-1] > vwap_m else "🔴 BEAR"
+            matrix_data.append({"TF": mtf, "Status": status})
+    
+    # Push the new table to the sidebar container
+    with matrix_container:
+        st.markdown("### 📊 TREND MATRIX")
+        st.table(pd.DataFrame(matrix_data))
+
+    # 5b. MAIN DASHBOARD LOGIC
     data = yf.download(ticker, period="5d", interval=tf, auto_adjust=True, progress=False)
     if data is not None and not data.empty:
         if isinstance(data.columns, pd.MultiIndex): data.columns = data.columns.get_level_values(0)
         
         data['VWAP'] = ta.vwap(data['High'], data['Low'], data['Close'], data['Volume'])
-        data['SMA200'] = ta.sma(data['Close'], length=200)
         data['ADX'] = ta.adx(data['High'], data['Low'], data['Close'])['ADX_14']
         macd = ta.macd(data['Close'])
         data['MACD_H'] = macd['MACDh_12_26_9']
-        data['RSI'] = ta.rsi(data['Close'], length=14)
         data['Vol_Avg'] = data['Volume'].rolling(window=20).mean()
         data['Is_Spike'] = data['Volume'] > (data['Vol_Avg'] * 2.5)
         
@@ -123,11 +127,13 @@ def dashboard_engine():
         data.loc[(data['Close'] < data['VWAP']) & (data['MACD_H'] < 0) & (data['ADX'] > 22), 'Raw'] = -1
         data['Entry'] = data['Raw'].diff().fillna(0)
         
-        last = active_bias = data.iloc[-1]
+        last = data.iloc[-1]
         
-        # AI SCORE (Consistent Calculation)
-        bias_count = sum([1 for m in matrix_data if m['Status'] == ("🟢 BULL" if last['Raw'] == 1 else "🔴 BEAR")])
+        # AI SCORE (Consistent Calculation using matrix_data)
+        current_bias = "🟢 BULL" if last['Raw'] == 1 else "🔴 BEAR" if last['Raw'] == -1 else None
+        bias_count = sum([1 for m in matrix_data if m['Status'] == current_bias]) if current_bias else 0
         final_conf = int(((bias_count / 3) * 40) + 60 if last['Raw'] != 0 else 0)
+        
         status_clr = "#00FF88" if last['Raw'] == 1 else "#FF3366" if last['Raw'] == -1 else "#777"
         signal_text = "🚀 BUY" if last['Raw'] == 1 else "📉 SELL" if last['Raw'] == -1 else "SCANNING..."
 
@@ -151,7 +157,6 @@ def dashboard_engine():
         fig = make_subplots(rows=3, cols=1, shared_xaxes=True, vertical_spacing=0.02, row_heights=[0.5, 0.1, 0.4])
         fig.add_trace(go.Candlestick(x=data.index, open=data['Open'], high=data['High'], low=data['Low'], close=data['Close'], name="Price"), row=1, col=1)
         fig.add_trace(go.Scatter(x=data.index, y=data['VWAP'], line=dict(color='orange', width=2), name="VWAP"), row=1, col=1)
-        fig.add_trace(go.Scatter(x=data.index, y=data['SMA200'], line=dict(color='white', width=1, dash='dot'), name="SMA 200"), row=1, col=1)
         
         buys = data[data['Entry'] == 1]; sells = data[data['Entry'] == -1]
         fig.add_trace(go.Scatter(x=buys.index, y=buys['Low']*0.999, mode="markers", marker=dict(symbol="triangle-up", size=15, color="#00FF88"), name="BUY"), row=1, col=1)
@@ -159,7 +164,6 @@ def dashboard_engine():
 
         fig.add_trace(go.Bar(x=data.index, y=data['Volume'], marker_color=['#FFFF00' if s else '#333' for s in data['Is_Spike']]), row=2, col=1)
         fig.add_trace(go.Bar(x=data.index, y=data['MACD_H'], marker_color=['#00FF88' if v >= 0 else '#FF3366' for v in data['MACD_H']]), row=3, col=1)
-        fig.add_trace(go.Scatter(x=data.index, y=data['RSI'], line=dict(color='#C084FC', width=1.5)), row=3, col=1)
 
         fig.update_layout(height=800, template="plotly_dark", xaxis_rangeslider_visible=False, margin=dict(l=0,r=0,t=0,b=0))
         st.plotly_chart(fig, use_container_width=True, key=f"chart_{choice}")
