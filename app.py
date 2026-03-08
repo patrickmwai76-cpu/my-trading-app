@@ -6,7 +6,7 @@ import plotly.graph_objects as go
 from plotly.subplots import make_subplots
 import logging
 
-# --- 1. SILENT LOGGING & MT5 CHECK ---
+# --- 1. SILENT LOGGING & MT5 CHECK (REMAINS THE SAME) ---
 logging.getLogger('streamlit').setLevel(logging.CRITICAL)
 try:
     import MetaTrader5 as mt5
@@ -14,7 +14,7 @@ try:
 except ImportError:
     MT5_AVAILABLE = False
 
-# --- 2. PREMIUM INTERFACE SETUP ---
+# --- 2. PREMIUM INTERFACE SETUP (REMAINS THE SAME) ---
 st.set_page_config(page_title="PATRO AI PRO V11.6", layout="wide", initial_sidebar_state="expanded")
 
 st.markdown("""
@@ -40,7 +40,7 @@ st.markdown("""
     </style>
     """, unsafe_allow_html=True)
 
-# --- 3. EXECUTION ENGINE ---
+# --- 3. EXECUTION ENGINE (REMAINS THE SAME) ---
 def place_justmarket_trade(symbol, order_type, volume=0.01):
     if not MT5_AVAILABLE:
         st.warning("⚠️ Local Windows MT5 required.")
@@ -64,13 +64,13 @@ def place_justmarket_trade(symbol, order_type, volume=0.01):
         mt5.order_send(request)
         st.balloons()
 
-# --- 4. SIDEBAR INPUTS ---
+# --- 4. SIDEBAR INPUTS (REMAINS THE SAME) ---
 asset_dict = {"XAUUSD": "GC=F", "US30": "^DJI", "GBPUSD": "GBPUSD=X"}
 with st.sidebar:
     st.title("🌌 PATRO V11.6")
     choice = st.selectbox("Market Asset", list(asset_dict.keys()))
     ticker = asset_dict[choice]
-    
+
     st.error("⚠️ **NEWS WATCH**\nUS Iran Conflict Impacting Gold.")
     st.divider()
     st.markdown("### 📋 INSTITUTIONAL SOP")
@@ -88,14 +88,12 @@ with st.sidebar:
     
     st.divider()
     tf = st.radio("Main Chart TF", ["1m", "5m", "15m"], index=1, horizontal=True)
-    
-    # Create an empty container in the sidebar for the Matrix to update into
     matrix_container = st.empty()
 
 # --- 5. THE LIVE ENGINE ---
 @st.fragment(run_every=7)
 def dashboard_engine():
-    # 5a. UPDATE SIDEBAR MATRIX (Inside Fragment)
+    # 5a. UPDATE SIDEBAR MATRIX
     matrix_data = []
     for mtf in ["1m", "5m", "15m"]:
         df_m = yf.download(ticker, period="1d", interval=mtf, progress=False)
@@ -105,23 +103,25 @@ def dashboard_engine():
             status = "🟢 BULL" if df_m['Close'].iloc[-1] > vwap_m else "🔴 BEAR"
             matrix_data.append({"TF": mtf, "Status": status})
     
-    # Push the new table to the sidebar container
     with matrix_container:
         st.markdown("### 📊 TREND MATRIX")
         st.table(pd.DataFrame(matrix_data))
 
-    # 5b. MAIN DASHBOARD LOGIC
+    # 5b. MAIN DATA FETCH
     data = yf.download(ticker, period="5d", interval=tf, auto_adjust=True, progress=False)
     if data is not None and not data.empty:
         if isinstance(data.columns, pd.MultiIndex): data.columns = data.columns.get_level_values(0)
         
+        # INDICATORS
         data['VWAP'] = ta.vwap(data['High'], data['Low'], data['Close'], data['Volume'])
-        data['ADX'] = ta.adx(data['High'], data['Low'], data['Close'])['ADX_14']
+        adx_df = ta.adx(data['High'], data['Low'], data['Close'])
+        data['ADX'] = adx_df['ADX_14']
         macd = ta.macd(data['Close'])
         data['MACD_H'] = macd['MACDh_12_26_9']
         data['Vol_Avg'] = data['Volume'].rolling(window=20).mean()
         data['Is_Spike'] = data['Volume'] > (data['Vol_Avg'] * 2.5)
         
+        # ENTRY LOGIC
         data['Raw'] = 0
         data.loc[(data['Close'] > data['VWAP']) & (data['MACD_H'] > 0) & (data['ADX'] > 22), 'Raw'] = 1
         data.loc[(data['Close'] < data['VWAP']) & (data['MACD_H'] < 0) & (data['ADX'] > 22), 'Raw'] = -1
@@ -129,22 +129,41 @@ def dashboard_engine():
         
         last = data.iloc[-1]
         
-        # AI SCORE (Consistent Calculation using matrix_data)
+        # AI SCORE CALCULATION
         current_bias = "🟢 BULL" if last['Raw'] == 1 else "🔴 BEAR" if last['Raw'] == -1 else None
         bias_count = sum([1 for m in matrix_data if m['Status'] == current_bias]) if current_bias else 0
         final_conf = int(((bias_count / 3) * 40) + 60 if last['Raw'] != 0 else 0)
         
+        # TREND STRENGTH METER LOGIC
+        adx_val = last['ADX']
+        if adx_val < 20: strength, s_clr = "WEAK/RANGING", "#777"
+        elif adx_val < 25: strength, s_clr = "EMERGING", "#008DFF"
+        elif adx_val < 50: strength, s_clr = "STRONG", "#00FF88"
+        else: strength, s_clr = "EXTREME", "#FFFF00"
+
         status_clr = "#00FF88" if last['Raw'] == 1 else "#FF3366" if last['Raw'] == -1 else "#777"
         signal_text = "🚀 BUY" if last['Raw'] == 1 else "📉 SELL" if last['Raw'] == -1 else "SCANNING..."
 
-        st.markdown(f"""
-            <div class="glass-card" style="border-bottom: 4px solid {status_clr};">
-                <p style="color:#666; letter-spacing:3px; font-size:10px; margin:0;">CONFLUENCE AI SCORE</p>
-                <h1 style="color:{status_clr}; font-size:65px; margin:5px 0;">{final_conf}%</h1>
-                <h2 style="color:{status_clr}; margin:0; letter-spacing:2px;">{signal_text}</h2>
-            </div>
-        """, unsafe_allow_html=True)
+        # TOP UI CARDS
+        score_col, strength_col = st.columns(2)
+        with score_col:
+            st.markdown(f"""
+                <div class="glass-card" style="border-bottom: 4px solid {status_clr}; height: 220px;">
+                    <p style="color:#666; letter-spacing:3px; font-size:10px; margin:0;">AI CONFLUENCE</p>
+                    <h1 style="color:{status_clr}; font-size:60px; margin:5px 0;">{final_conf}%</h1>
+                    <h3 style="color:{status_clr}; margin:0;">{signal_text}</h3>
+                </div>
+            """, unsafe_allow_html=True)
+        with strength_col:
+            st.markdown(f"""
+                <div class="glass-card" style="border-bottom: 4px solid {s_clr}; height: 220px;">
+                    <p style="color:#666; letter-spacing:3px; font-size:10px; margin:0;">TREND STRENGTH</p>
+                    <h1 style="color:{s_clr}; font-size:60px; margin:5px 0;">{int(adx_val)}</h1>
+                    <h3 style="color:{s_clr}; margin:0;">{strength}</h3>
+                </div>
+            """, unsafe_allow_html=True)
 
+        # EXECUTION BUTTONS
         c1, c2 = st.columns(2)
         with c1:
             if st.button("🚀 EXECUTE BUY", key="buy_btn"):
@@ -153,7 +172,7 @@ def dashboard_engine():
             if st.button("📉 EXECUTE SELL", key="sell_btn"):
                 place_justmarket_trade(choice, 1, lots)
 
-        # CHART
+        # CHARTING (REMAINS THE SAME)
         fig = make_subplots(rows=3, cols=1, shared_xaxes=True, vertical_spacing=0.02, row_heights=[0.5, 0.1, 0.4])
         fig.add_trace(go.Candlestick(x=data.index, open=data['Open'], high=data['High'], low=data['Low'], close=data['Close'], name="Price"), row=1, col=1)
         fig.add_trace(go.Scatter(x=data.index, y=data['VWAP'], line=dict(color='orange', width=2), name="VWAP"), row=1, col=1)
