@@ -1,104 +1,120 @@
 import streamlit as st
 import pandas as pd
+import pandas_ta as ta
 import yfinance as yf
 import plotly.graph_objects as go
 
 # --- 1. CORE CONFIG ---
-st.set_page_config(page_title="PATRO AI PRO V11.6", layout="wide")
-st.markdown("<style>.stApp { background: #020202; color: #e0e0e0; }</style>", unsafe_allow_html=True)
+st.set_page_config(page_title="PATRO AI PRO V11.6.2", layout="wide")
+st.markdown("<style>.stApp { background: #010101; color: #ffffff; }</style>", unsafe_allow_html=True)
 
-# --- 2. THE PERMANENT FRAME (Outside Fragment) ---
-st.title("🌌 PATRO AI PRO V11.6 | INSTITUTIONAL")
+# --- 2. PERMANENT UI ---
+st.title("🌌 PATRO AI PRO V11.6.2 | MASTER COMMAND")
 
 with st.sidebar:
-    st.header("🏢 TRADING DESK")
-    asset_choice = st.selectbox("Asset", ["GOLD", "GBPUSD", "US30"])
+    st.header("🏢 INSTITUTIONAL DESK")
+    asset_choice = st.selectbox("Market Target", ["GOLD", "GBPUSD", "US30"])
     ticker_map = {"GOLD":"GC=F", "GBPUSD":"GBPUSD=X", "US30":"^DJI"}
     target_ticker = ticker_map[asset_choice]
     
     st.divider()
-    sop_spot = st.empty()  # For Institutional SOPs
-    matrix_spot = st.empty() # For MTF Price Action
-
-# --- 3. INSTITUTIONAL ENGINE ---
-def get_clean_data(ticker):
-    df = yf.download(ticker, period="2d", interval="1m", progress=False, auto_adjust=True)
-    if isinstance(df.columns, pd.MultiIndex): df.columns = df.columns.get_level_values(0)
-    return df
-
-@st.fragment(run_every="10s")
-def run_institutional_core(ticker, label):
-    df = get_clean_data(ticker)
-    if df.empty or len(df) < 10: return
-
-    # --- A. PRICE ACTION LOGIC (No Indicators) ---
-    current_price = df.Close.iloc[-1]
-    prev_price = df.Close.iloc[-2]
-    high_24h = df.High.max()
-    low_24h = df.Low.min()
+    # Risk Management (Hard-Lock SL)
+    st.subheader("🛡️ RISK MGMT")
+    lot_size = st.number_input("Lot Size", value=0.1, step=0.01)
+    risk_percent = st.slider("Risk Tolerance %", 0.5, 3.0, 1.0)
     
-    # Identify Institutional "Fair Value Gaps" (FVG)
-    # Simple logic: If current candle open is far from previous candle close
-    is_imbalance = abs(df.Open.iloc[-1] - df.Close.iloc[-2]) > (df.High.iloc[-1] - df.Low.iloc[-1]) * 0.5
+    st.divider()
+    mtf_spot = st.empty()  # Power Matrix
+    v_rec_spot = st.empty() # V-Recovery Alert
+    sl_spot = st.empty() # Stop Loss Display
+
+# --- 3. ANALYTICS ENGINE ---
+def get_mtf_data(ticker, interval):
+    try:
+        df = yf.download(ticker, period="2d", interval=interval, progress=False, auto_adjust=True)
+        if df.empty: return pd.DataFrame()
+        if isinstance(df.columns, pd.MultiIndex): df.columns = df.columns.get_level_values(0)
+        
+        # Hidden Calculation Engines (Powering the Score)
+        df['RSI'] = ta.rsi(df.Close, length=14)
+        macd = ta.macd(df.Close)
+        df['MACD'] = macd['MACD_12_26_9']
+        df['SIG'] = macd['MACDs_12_26_9']
+        return df
+    except: return pd.DataFrame()
+
+@st.fragment(run_every="8s") # 8-second refresh cycle
+def run_master_pulse(ticker, label):
+    # Data Stream
+    d1, d5, d15 = get_mtf_data(ticker, "1m"), get_mtf_data(ticker, "5m"), get_mtf_data(ticker, "15m")
+    if d1.empty: 
+        st.warning("Awaiting Market Pulse...")
+        return
+
+    # --- A. CONFLUENCE BIAS (Hidden Matrix) ---
+    def get_bias(df):
+        r, m, s = df['RSI'].iloc[-1], df['MACD'].iloc[-1], df['SIG'].iloc[-1]
+        if r > 50 and m > s: return "🟢 BULL"
+        if r < 50 and m < s: return "🔴 BEAR"
+        return "⚪ NEUTRAL"
+
+    b1, b5, b15 = get_bias(d1), get_bias(d5), get_bias(d15)
+
+    # --- B. INSTITUTIONAL RECOVERY & SL ---
+    session_low = d1['Low'].min()
+    current_price = d1['Close'].iloc[-1]
     
-    # --- B. SIDEBAR UPDATES (Remote) ---
-    with sop_spot.container():
-        st.subheader("📋 INSTITUTIONAL SOP")
+    # 2-Pip Hard-Lock Stop Loss
+    sl_buffer = (0.0002 if "USD" in label else 1.0)
+    hard_lock_sl = session_low - sl_buffer
+    
+    is_v_rebound = (current_price > session_low) and (b1 == "🟢 BULL") and (d1['Close'].iloc[-1] > d1['Open'].iloc[-1])
+
+    # --- C. SIDEBAR UPDATES ---
+    with mtf_spot.container():
+        st.caption(f"MTF MATRIX ({pd.Timestamp.now().strftime('%H:%M:%S')} EAT)")
+        st.table(pd.DataFrame([{"TF": "1M", "Power": b1}, {"TF": "5M", "Power": b5}, {"TF": "15M", "Power": b15}]))
+
+    with v_rec_spot.container():
+        if is_v_rebound:
+            st.success("🔥 V-RECOVERY: ACTIVE")
+            st.write(f"Target: {d1.High.max():,.2f}")
+        else: st.info("SCANNING: No Rebound")
+    
+    with sl_spot.container():
         st.markdown(f"""
-        * **HTF Trend:** {'🟢 BULLISH' if current_price > df.Close.iloc[-50] else '🔴 BEARISH'}
-        * **Liquidity:** {'⚠️ VOID DETECTED' if is_imbalance else '✅ STABLE'}
-        * **Daily Range:** {round(high_24h - low_24h, 2)} Pips
-        """)
-        st.divider()
-
-    with matrix_spot.container():
-        st.subheader("⚡ PRICE MATRIX")
-        trend = "⬆️" if current_price > prev_price else "⬇️"
-        st.metric(label="LIVE PRICE", value=f"{current_price:,.2f}", delta=f"{trend} {abs(current_price-prev_price):,.2f}")
-
-    # --- C. MAIN DASHBOARD ---
-    # Smart Confluence Score (Based on Price Structure, not Indicators)
-    score = 50
-    if current_price > df.Open.iloc[0]: score += 20 # Session Strength
-    if not is_imbalance: score += 15 # Stability
-    if current_price > high_24h * 0.99: score += 10 # Breakout Momentum
-    
-    color = "#00FF88" if score > 70 else "#FF3366" if score < 40 else "#FFA500"
-
-    col1, col2 = st.columns([1, 2])
-    with col1:
-        st.markdown(f"""
-            <div style="border: 2px solid {color}; border-radius: 10px; padding: 20px; text-align: center; background: {color}05;">
-                <p style="margin:0; font-size: 12px; color: #888;">INSTITUTIONAL BIAS</p>
-                <h1 style="margin:0; font-size: 55px; color: {color};">{score}%</h1>
+            <div style="border: 1px solid #FF3366; padding:10px; border-radius:5px; background: #FF336611;">
+                <p style="margin:0; font-size:10px;">HARD-LOCK SL</p>
+                <h3 style="margin:0; color:#FF3366;">{hard_lock_sl:,.2f}</h3>
             </div>
         """, unsafe_allow_html=True)
-    
-    with col2:
-        msg = "🚀 INSTITUTIONAL BUY" if score > 70 else "📉 LIQUIDITY GRAB (SELL)" if score < 40 else "⌛ ACCUMULATION ZONE"
-        st.markdown(f"<h2 style='color:{color}; margin-top:15px;'>{msg}</h2>", unsafe_allow_html=True)
-        st.caption(f"Last Institutional Scan: {pd.Timestamp.now().strftime('%H:%M:%S')} EAT")
 
-    # --- D. THE CLEAN CHART (Price Only) ---
+    # --- D. DASHBOARD SCORING ---
+    is_strong_buy = (b1 == b5 == b15 == "🟢 BULL")
+    is_strong_sell = (b1 == b5 == b15 == "🔴 BEAR")
+    score = 98 if is_strong_buy else 2 if is_strong_sell else 50
+    color = "#00FF88" if score > 90 else "#FF3366" if score < 10 else "#FFA500"
+
+    c1, c2, c3 = st.columns([1, 1, 2])
+    with c1:
+        st.markdown(f"<div style='border:2px solid {color}; padding:10px; border-radius:10px; text-align:center;'><h2>{score}%</h2><p>AI CONFIDENCE</p></div>", unsafe_allow_html=True)
+    with c2:
+        st.metric("LIVE PRICE", f"{current_price:,.2f}", delta=f"{current_price - d1.Open.iloc[-1]:.2f}")
+    with c3:
+        signal = "🚀 STRONG BUY" if is_strong_buy else "📉 STRONG SELL" if is_strong_sell else "⌛ ACCUMULATING"
+        st.markdown(f"<h1 style='color:{color};'>{signal}</h1>", unsafe_allow_html=True)
+
+    # --- E. INSTITUTIONAL CHART ---
     fig = go.Figure()
-    # Candlesticks
-    fig.add_trace(go.Candlestick(
-        x=df.index, open=df.Open, high=df.High, low=df.Low, close=df.Close,
-        name="Market Price",
-        increasing_line_color='#00FF88', decreasing_line_color='#FF3366'
-    ))
+    fig.add_trace(go.Candlestick(x=d1.index, open=d1.Open, high=d1.High, low=d1.Low, close=d1.Close, name="Price",
+                                 increasing_line_color='#00FF88', decreasing_line_color='#FF3366'))
     
-    # Highlight Liquidity Zones (Session High/Low)
-    fig.add_hline(y=high_24h, line_dash="dot", line_color="#444", annotation_text="Prev High")
-    fig.add_hline(y=low_24h, line_dash="dot", line_color="#444", annotation_text="Prev Low")
-
-    fig.update_layout(
-        height=550, template="plotly_dark", 
-        xaxis_rangeslider_visible=False,
-        margin=dict(l=0,r=0,t=0,b=0),
-        paper_bgcolor='rgba(0,0,0,0)', plot_bgcolor='rgba(0,0,0,0)'
-    )
-    st.plotly_chart(fig, use_container_width=True, key=f"clean_chart_{label}")
+    # Session Low / SL Line
+    fig.add_hline(y=session_low, line_dash="dash", line_color="#FF3366", annotation_text="Safety Floor")
+    
+    fig.update_layout(height=550, template="plotly_dark", xaxis_rangeslider_visible=False, 
+                      margin=dict(l=0,r=0,t=0,b=0), paper_bgcolor='rgba(0,0,0,0)', plot_bgcolor='rgba(0,0,0,0)')
+    st.plotly_chart(fig, use_container_width=True, key=f"pulse_{label}")
 
 # --- 4. EXECUTION ---
-run_institutional_core(target_ticker, asset_choice)
+run_master_pulse(target_ticker, asset_choice)
