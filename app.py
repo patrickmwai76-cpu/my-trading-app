@@ -20,26 +20,18 @@ def get_data(ticker, tf="1m"):
     except:
         return pd.DataFrame()
 
-# --- 3. SIDEBAR (STABLE AREA) ---
-# Move sidebar calls OUTSIDE the fragment to prevent the StreamlitAPIException
+# --- 3. GLOBAL UI SETUP ---
 with st.sidebar:
     st.title("🌌 PATRO V11.6")
-    asset_key = st.selectbox("Market Asset", ["GOLD", "GBPUSD", "US30"])
+    asset_key = st.selectbox("Asset", ["GOLD", "GBPUSD", "US30"])
     ticker_map = {"GOLD":"GC=F", "GBPUSD":"GBPUSD=X", "US30":"^DJI"}
     target_ticker = ticker_map[asset_key]
-    
     st.divider()
-    st.subheader("📋 SOP CHECKLIST")
-    f_conf = st.checkbox("MTF Alignment Check", value=True)
-    f_vol = st.checkbox("Volume Threshold Check", value=True)
-    
-    # Placeholder for the Matrix (Fragment will fill this)
-    matrix_container = st.empty()
 
-# --- 4. THE LIVE FRAGMENT ENGINE ---
+# --- 4. THE FRAGMENT ENGINE ---
 @st.fragment(run_every="10s")
-def live_dashboard(ticker, label):
-    # 4a. Multi-Timeframe Matrix Logic
+def render_system(ticker, label):
+    # 4a. CALCULATE DATA
     matrix_results = []
     directions = []
     for tf in ["1m", "5m", "15m"]:
@@ -51,57 +43,60 @@ def live_dashboard(ticker, label):
             matrix_results.append({"Timeframe": tf, "Power": icon})
             directions.append(is_up)
     
-    # Update the sidebar matrix from within the fragment using the placeholder
-    matrix_container.table(pd.DataFrame(matrix_results))
+    # 4b. UPDATE THE SIDEBAR (Inside the fragment's context)
+    with st.sidebar:
+        st.subheader("⚡ POWER MATRIX")
+        st.table(pd.DataFrame(matrix_results))
+        st.divider()
+        st.write("📋 **SOP STATUS**")
+        st.checkbox("MTF Alignment", value=len(set(directions)) == 1)
+        st.checkbox("Market Open", value=True)
 
-    # 4b. Main Analysis (1m)
+    # 4c. MAIN DASHBOARD CONTENT
     df = get_data(ticker, "1m")
     if not df.empty and len(df) > 20:
         df['VWAP'] = ta.vwap(df.High, df.Low, df.Close, df.Volume)
-        df['RSI'] = ta.rsi(df.Close, length=14)
+        df['RSI'] = ta.rsi(df.Close)
         last = df.iloc[-1]
         
-        # News Analysis (Simulated for March 9, 2026)
+        # News Logic (March 9, 2026 Context)
         news_headlines = {
-            "GOLD": "Gold tests $5,100 resistance as geopolitical tension holds.",
-            "GBPUSD": "Pound steady ahead of BoE interest rate commentary.",
-            "US30": "Dow under pressure as oil prices spike above $100."
+            "GOLD": "Gold buyers cautious as $5,100 resistance holds firm.",
+            "GBPUSD": "Cable stalls as traders eye UK GDP data.",
+            "US30": "Indices face selling pressure; VWAP acts as hard ceiling."
         }
         
-        # --- AI SCORE CALCULATION ---
         all_match = len(set(directions)) == 1
-        base_score = 60 if all_match else 20
-        sop_bonus = (f_conf + f_vol) * 15
-        rsi_bonus = 10 if (last['RSI'] > 55 or last['RSI'] < 45) else 0
-        final_score = base_score + sop_bonus + rsi_bonus
-
-        # --- ACTION UI ---
         color = "#00FF88" if (all_match and directions[0]) else "#FF3366" if (all_match and not directions[0]) else "#FFA500"
         
-        col1, col2 = st.columns([1, 2])
-        with col1:
+        # Scoring
+        final_score = 90 if all_match else 45
+        if abs(last['RSI'] - 50) < 5: final_score -= 10 # Deduct for chop
+        
+        # Header Metrics
+        c1, c2 = st.columns([1, 2])
+        with c1:
             st.markdown(f"""
                 <div style="border: 3px solid {color}; border-radius: 15px; padding: 20px; text-align: center; background: {color}11;">
-                    <p style="margin:0; font-size: 14px; color: #aaa;">AI CONFIDENCE</p>
-                    <h1 style="margin:0; font-size: 60px; color: {color};">{final_score}%</h1>
+                    <p style="margin:0; font-size: 14px; color: #aaa;">AI CONFLUENCE</p>
+                    <h1 style="margin:0; font-size: 64px; color: {color};">{final_score}%</h1>
                 </div>
             """, unsafe_allow_html=True)
-            
-        with col2:
+        with c2:
             st.info(f"📰 **NEWS SENTINEL:** {news_headlines.get(label)}")
+            signal = "🚀 STRONG BUY" if directions[0] else "📉 STRONG SELL"
             if final_score >= 85:
-                signal = "🚀 STRONG BUY" if directions[0] else "📉 STRONG SELL"
                 st.markdown(f"<h2 style='color:{color}; text-align:center;'>{signal}</h2>", unsafe_allow_html=True)
             else:
-                st.markdown("<h2 style='color:#777; text-align:center;'>⌛ SCANNING...</h2>", unsafe_allow_html=True)
+                st.markdown("<h2 style='color:#777; text-align:center;'>⌛ NEUTRAL / CHOPPY</h2>", unsafe_allow_html=True)
 
-        # --- CHART ---
+        # Main Chart
         fig = make_subplots(rows=2, cols=1, shared_xaxes=True, row_heights=[0.7, 0.3], vertical_spacing=0.05)
         fig.add_trace(go.Candlestick(x=df.index, open=df.Open, high=df.High, low=df.Low, close=df.Close, name="Price"), row=1, col=1)
         fig.add_trace(go.Scatter(x=df.index, y=df.VWAP, line=dict(color='orange', width=2), name="VWAP"), row=1, col=1)
         fig.add_trace(go.Bar(x=df.index, y=df.Volume, name="Volume", marker_color=color), row=2, col=1)
-        fig.update_layout(height=600, template="plotly_dark", xaxis_rangeslider_visible=False, margin=dict(l=0,r=0,t=0,b=0))
-        st.plotly_chart(fig, use_container_width=True, key=f"chart_{label}")
+        fig.update_layout(height=650, template="plotly_dark", xaxis_rangeslider_visible=False, margin=dict(l=0,r=0,t=0,b=0))
+        st.plotly_chart(fig, use_container_width=True, key=f"v116_{label}")
 
-# Start the fixed engine
-live_dashboard(target_ticker, asset_key)
+# --- 5. START EXECUTION ---
+render_system(target_ticker, asset_key)
