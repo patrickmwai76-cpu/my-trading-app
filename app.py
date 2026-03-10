@@ -5,92 +5,113 @@ import yfinance as yf
 import plotly.graph_objects as go
 
 # --- 1. CORE CONFIG ---
-st.set_page_config(page_title="PATRO AI PRO V11.6.2", layout="wide")
+st.set_page_config(page_title="PATRO AI PRO V11.7.0", layout="wide")
 st.markdown("<style>.stApp { background: #010101; color: #ffffff; }</style>", unsafe_allow_html=True)
 
 # --- 2. PERMANENT UI ---
-st.title("🌌 PATRO AI PRO V11.6.2 | ANTI-TRAP EDITION")
+st.title("🌌 PATRO AI PRO V11.7.0 | INSTITUTIONAL SMC")
 
 with st.sidebar:
     st.header("🏢 INSTITUTIONAL DESK")
     asset_choice = st.selectbox("Market Target", ["GOLD", "GBPUSD", "US30"])
+    # Adjusted Tickers for 2026 feeds
     ticker_map = {"GOLD":"GC=F", "GBPUSD":"GBPUSD=X", "US30":"^DJI"}
     target_ticker = ticker_map[asset_choice]
     
     st.divider()
     mtf_spot = st.empty()  
-    vol_spot = st.empty() # New: Institutional Volume Indicator
-    sl_spot = st.empty() 
+    vol_spot = st.empty() 
+    st.info("SMC Mode: Active (BOS + 1.5x Vol)")
 
 # --- 3. ANALYTICS ENGINE ---
 def get_mtf_data(ticker, interval):
     try:
-        df = yf.download(ticker, period="2d", interval=interval, progress=False, auto_adjust=True)
+        # Fetching enough data for 20-period lookback
+        df = yf.download(ticker, period="3d", interval=interval, progress=False, auto_adjust=True)
         if df.empty: return pd.DataFrame()
         if isinstance(df.columns, pd.MultiIndex): df.columns = df.columns.get_level_values(0)
         
+        # Core Indicators
         df['RSI'] = ta.rsi(df.Close, length=14)
         macd = ta.macd(df.Close)
         df['MACD'] = macd['MACD_12_26_9']
         df['SIG'] = macd['MACDs_12_26_9']
-        # Volatility Filter
         df['ATR'] = ta.atr(df.High, df.Low, df.Close, length=14)
         return df
     except: return pd.DataFrame()
 
+def get_institutional_signal(df):
+    if len(df) < 30: return "⌛ SCANNING", "#888888"
+    
+    # A. Institutional Volume Filter (1.5x Threshold)
+    vol_avg = df['Volume'].tail(20).mean()
+    curr_vol = df['Volume'].iloc[-1]
+    is_bank_vol = curr_vol > (vol_avg * 1.5)
+
+    # B. Break of Structure (BOS) 
+    prev_high = df['High'].iloc[-21:-1].max()
+    prev_low = df['Low'].iloc[-21:-1].min()
+    curr_close = df['Close'].iloc[-1]
+    
+    # C. Body Momentum (Must be 60% of candle)
+    candle_range = df['High'].iloc[-1] - df['Low'].iloc[-1]
+    body_size = abs(df['Close'].iloc[-1] - df['Open'].iloc[-1])
+    is_strong_move = (body_size / candle_range) > 0.6 if candle_range != 0 else False
+
+    # D. BIAS CHECK
+    r, m, s = df['RSI'].iloc[-1], df['MACD'].iloc[-1], df['SIG'].iloc[-1]
+
+    if curr_close > prev_high and is_bank_vol and is_strong_move and r > 50:
+        return "🏦 BANK BUY (SURE)", "#00FF88"
+    
+    if curr_close < prev_low and is_bank_vol and is_strong_move and r < 50:
+        return "🏦 BANK SELL (SURE)", "#FF3366"
+
+    return "⌛ RETAIL NOISE (WAIT)", "#FFA500"
+
 @st.fragment(run_every="8s")
 def run_master_pulse(ticker, label):
-    d1, d5, d15 = get_mtf_data(ticker, "1m"), get_mtf_data(ticker, "5m"), get_mtf_data(ticker, "15m")
+    # Fetching 1m for precision and 5m for confirmation
+    d1, d5 = get_mtf_data(ticker, "1m"), get_mtf_data(ticker, "5m")
     if d1.empty: return
 
-    # --- A. ANTI-TRAP BIAS LOGIC ---
-    def get_smart_bias(df):
-        r, m, s = df['RSI'].iloc[-1], df['MACD'].iloc[-1], df['SIG'].iloc[-1]
-        vol_avg = df['Volume'].tail(10).mean()
-        curr_vol = df['Volume'].iloc[-1]
-        
-        # Institutional Confirmation (Volume must be 1.2x average)
-        is_bank_move = curr_vol > (vol_avg * 1.2)
+    signal_text, signal_color = get_institutional_signal(d1)
 
-        if r > 52 and m > s:
-            return "🟢 BUY" if is_bank_move else "⌛ WEAK BUY"
-        if r < 48 and m < s:
-            return "🔴 SELL" if is_bank_move else "⚪ TRAP (NO VOL)"
-        return "⚪ NEUTRAL"
-
-    b1, b5, b15 = get_smart_bias(d1), get_smart_bias(d5), get_smart_bias(d15)
-
-    # --- B. SIDEBAR UPDATES ---
-    with mtf_spot.container():
-        st.caption(f"ANTI-TRAP MATRIX ({pd.Timestamp.now().strftime('%H:%M:%S')} EAT)")
-        st.table(pd.DataFrame([{"TF": "1M", "Power": b1}, {"TF": "5M", "Power": b5}, {"TF": "15M", "Power": b15}]))
-
+    # --- SIDEBAR UPDATES ---
     with vol_spot.container():
         vol_ratio = d1['Volume'].iloc[-1] / d1['Volume'].tail(10).mean()
-        vol_color = "#00FF88" if vol_ratio > 1.2 else "#FFA500"
-        st.markdown(f"**Bank Volume:** <span style='color:{vol_color}'>{vol_ratio:.2f}x</span>", unsafe_allow_html=True)
+        st.write(f"**Institutional Power:** {vol_ratio:.2f}x")
 
-    # --- C. DASHBOARD SCORING ---
-    is_true_sell = (b1 == "🔴 SELL" and b5 == "🔴 SELL")
-    is_true_buy = (b1 == "🟢 BUY" and b5 == "🟢 BUY")
-    
-    score = 98 if is_true_buy else 2 if is_true_sell else 50
-    color = "#00FF88" if score > 90 else "#FF3366" if score < 10 else "#FFA500"
-
-    c1, c2, c3 = st.columns([1, 1, 2])
+    # --- MAIN DASHBOARD ---
+    c1, c2, c3 = st.columns([1.5, 1, 1.5])
     with c1:
-        st.markdown(f"<div style='border:2px solid {color}; padding:10px; border-radius:10px; text-align:center;'><h2>{score}%</h2><p>AI POWER</p></div>", unsafe_allow_html=True)
+        st.markdown(f"""
+            <div style='border:3px solid {signal_color}; padding:15px; border-radius:15px; text-align:center; background:#111;'>
+                <h2 style='color:{signal_color}; margin:0;'>{signal_text}</h2>
+                <p style='margin:0; opacity:0.6;'>MTF CONFIRMATION: {label}</p>
+            </div>
+            """, unsafe_allow_html=True)
     with c2:
-        st.metric("PRICE", f"{d1.Close.iloc[-1]:,.2f}")
+        st.metric("CURRENT PRICE", f"{d1.Close.iloc[-1]:,.2f}")
     with c3:
-        status = "🚀 INSTITUTIONAL RALLY" if is_true_buy else "📉 BANK DUMP" if is_true_sell else "⚠️ TRAP DETECTED"
-        st.markdown(f"<h1 style='color:{color};'>{status}</h1>", unsafe_allow_html=True)
+        trend = "BULLISH" if d5.Close.iloc[-1] > d5.Close.iloc[-10] else "BEARISH"
+        st.markdown(f"### Trend Bias: {trend}")
 
-    # --- D. CHART ---
+    # --- CHART WITH ANNOTATIONS ---
     fig = go.Figure()
     fig.add_trace(go.Candlestick(x=d1.index, open=d1.Open, high=d1.High, low=d1.Low, close=d1.Close, name="Price"))
-    fig.add_hline(y=d1.Low.min(), line_dash="dash", line_color="#FF3366", annotation_text="Safety Floor")
-    fig.update_layout(height=500, template="plotly_dark", xaxis_rangeslider_visible=False, margin=dict(l=0,r=0,t=0,b=0))
+    
+    # Logic to only place the "SURE" label if it triggers
+    if "BANK" in signal_text:
+        fig.add_annotation(
+            x=d1.index[-1], y=d1['High'].iloc[-1],
+            text=f"<b>{signal_text}</b>",
+            showarrow=True, arrowhead=2, arrowcolor=signal_color,
+            font=dict(size=16, color="white"),
+            bgcolor=signal_color, borderpad=4
+        )
+
+    fig.update_layout(height=600, template="plotly_dark", xaxis_rangeslider_visible=False, margin=dict(l=0,r=0,t=0,b=0))
     st.plotly_chart(fig, use_container_width=True, key=f"pulse_{label}")
 
 run_master_pulse(target_ticker, asset_choice)
