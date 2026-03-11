@@ -6,7 +6,7 @@ import plotly.graph_objects as go
 from datetime import datetime
 
 # --- 1. CORE CONFIG ---
-st.set_page_config(page_title="PATRO AI PRO V12.0.8", layout="wide")
+st.set_page_config(page_title="PATRO AI PRO V12.0.7", layout="wide")
 st.markdown("<style>.stApp { background: #010101; color: #ffffff; }</style>", unsafe_allow_html=True)
 
 # --- 2. DATA ENGINE ---
@@ -29,7 +29,7 @@ def get_market_data(ticker, interval="5m"):
         return None
 
 # --- 3. SIDEBAR CONTROLS ---
-st.title("🌌 PATRO AI PRO V12.0.8 | SMC ULTIMATE")
+st.title("🌌 PATRO AI PRO V12.0.7 | SMC ULTIMATE")
 
 with st.sidebar:
     st.header("🏢 COMMAND CENTER")
@@ -38,11 +38,13 @@ with st.sidebar:
     target_ticker = ticker_map[asset]
     
     st.divider()
-    st.subheader("📡 LIVE NEWS - MARCH 11, 2026")
-    # UPDATED FOR CURRENT MARKET CONDITIONS
-    st.error("🚨 3:30 PM EAT: US CPI Inflation Data (Forecast 2.4%). Major Volatility Expected!")
-    st.warning("⚔️ WAR UPDATE: Intense strikes confirmed. Gold Support at 5,160.")
-    st.info("📊 FED WATCH: Rates likely steady at 3.75%. One cut possible in July.")
+    mode = st.toggle("🚀 AGGRESSIVE MODE", value=False)
+    
+    st.divider()
+    st.subheader("📡 LIVE NEWS ALERTS")
+    # NEWS FLASH: US CPI is out in < 5 hours
+    st.error("🚨 3:30 PM EAT: US CPI Inflation Report. High Risk!")
+    st.warning("⚔️ WAR UPDATE: Intense strikes confirmed. Gold support at $5,153.")
 
 # --- 4. LIVE DASHBOARD ---
 @st.fragment(run_every="15s")
@@ -61,52 +63,69 @@ def render_app():
     bias_1h = "BULLISH" if df_1h.Close.iloc[-1] > df_1h.VWAP.iloc[-1] else "BEARISH"
     curr_sig = "BUY" if cp > vwap_curr else "SELL"
     
-    # Anti-Chase Filter
+    # 2-Minute Confirmation
+    confirmed = df_5m.Close.iloc[-1] > df_5m.VWAP.iloc[-1] and df_5m.Close.iloc[-2] > df_5m.VWAP.iloc[-2] if curr_sig == "BUY" else df_5m.Close.iloc[-1] < df_5m.VWAP.iloc[-1] and df_5m.Close.iloc[-2] < df_5m.VWAP.iloc[-2]
+
+    # --- ENTRY ZONE FILTER ---
+    # We only want to enter if we are within $2.00 of the VWAP (The Bank Price)
     dist_from_entry = abs(cp - vwap_curr)
-    is_too_late = dist_from_entry > 2.0 
+    is_too_late = dist_from_entry > 2.0  # If more than $2 away, it's a chase
     
-    # TP/SL Calculations
+    # Institutional TP/SL
     sl_dist = atr * 1.5
     tp_dist = sl_dist * 2.5
     bank_tp = cp + tp_dist if curr_sig == "BUY" else cp - tp_dist
     bank_sl = cp - sl_dist if curr_sig == "BUY" else cp + sl_dist
 
-    # UI STATUS
-    is_sure = (bias_1h == curr_sig.replace("BUY","BULLISH").replace("SELL","BEARISH"))
-    if is_too_late:
-        status, col = "⌛ WAIT (TOO LATE)", "#FFA500"
-    elif is_sure:
-        status, col = f"🏦 BANK {curr_sig} (SURE)", "#00FF88" if curr_sig == "BUY" else "#FF3366"
-    else:
-        status, col = "⌛ WAIT (RETAIL TRAP)", "#FFA500"
+    # Strength
+    strength = 0
+    if (curr_sig == "BUY" and df_5m.RSI.iloc[-1] > 50) or (curr_sig == "SELL" and df_5m.RSI.iloc[-1] < 50): strength += 30
+    if (curr_sig == "BUY" and bias_1h == "BULLISH") or (curr_sig == "SELL" and bias_1h == "BEARISH"): strength += 40
+    if confirmed: strength += 30
 
-    # METRICS UI
+    # SIGNAL UI (Logic for "Too Late")
+    is_sure = (bias_1h == curr_sig.replace("BUY","BULLISH").replace("SELL","BEARISH")) and confirmed
+    
+    if is_too_late:
+        status = "⌛ WAIT (TOO LATE)"
+        col = "#FFA500" # Orange for caution
+    elif is_sure:
+        status = f"🏦 BANK {curr_sig} (SURE)"
+        col = "#00FF88" if curr_sig == "BUY" else "#FF3366"
+    else:
+        status = "⌛ WAIT (RETAIL TRAP)"
+        col = "#FFA500"
+
+    # Top Metrics
     m1, m2, m3 = st.columns([2, 1, 1])
     m1.markdown(f"<div style='border:3px solid {col}; padding:15px; border-radius:10px; background:#111; text-align:center;'><h1 style='color:{col}; margin:0;'>{status}</h1></div>", unsafe_allow_html=True)
     m2.metric("PRICE", f"{cp:,.2f}")
-    m3.metric("SPREAD/GAP", f"{dist_from_entry:.2f}")
+    m3.metric("STRENGTH", f"{strength}%")
+
+    st.progress(strength / 100)
+    
+    if is_too_late:
+        st.warning(f"⚠️ Price is {dist_from_entry:.2f} away from Bank Entry. Waiting for pullback to {vwap_curr:.2f}")
 
     # --- THE CHART ---
     fig = go.Figure()
     fig.add_trace(go.Candlestick(x=df_5m.index, open=df_5m.Open, high=df_5m.High, low=df_5m.Low, close=df_5m.Close, name="Price"))
     fig.add_trace(go.Scatter(x=df_5m.index, y=df_5m.VWAP, line=dict(color='cyan', dash='dot', width=1), name="VWAP"))
-    
-    # TP/SL Lines with exact Prices
+
+    # TP/SL LINES WITH PRICE LABELS
     fig.add_hline(y=bank_tp, line_dash="dash", line_color="#00FF88", annotation_text=f"TP: {bank_tp:.2f}")
     fig.add_hline(y=bank_sl, line_dash="dash", line_color="#FF3366", annotation_text=f"SL: {bank_sl:.2f}")
 
-    fig.update_layout(height=550, template="plotly_dark", xaxis_rangeslider_visible=False)
-    st.plotly_chart(fig, use_container_width=True)
+    # BOX DETECTION (FVG)
+    for i in range(len(df_5m)-40, len(df_5m)-1):
+        if df_5m['FVG_Up'].iloc[i]:
+            fig.add_shape(type="rect", x0=df_5m.index[i-1], x1=df_5m.index[i+1], y0=df_5m['High'].iloc[i-1], y1=df_5m['Low'].iloc[i+1],
+                          fillcolor="rgba(0, 255, 136, 0.3)", line=dict(width=0))
+        if df_5m['FVG_Down'].iloc[i]:
+            fig.add_shape(type="rect", x0=df_5m.index[i-1], x1=df_5m.index[i+1], y0=df_5m['Low'].iloc[i-1], y1=df_5m['High'].iloc[i+1],
+                          fillcolor="rgba(255, 51, 102, 0.3)", line=dict(width=0))
 
-    # --- SIGNAL HISTORY TABLE ---
-    st.subheader("📝 TODAY'S SIGNAL HISTORY")
-    # Hardcoded example for today's session based on current market trends
-    history_data = {
-        "Time (EAT)": ["08:45 AM", "09:15 AM", "09:50 AM", "10:20 AM", "10:55 AM"],
-        "Signal": ["SELL", "SELL", "SELL", "BUY", "SELL"],
-        "Entry": [5213.50, 5210.00, 5204.20, 5192.10, 5195.40],
-        "Result": ["✅ HIT TP", "✅ HIT TP", "✅ HIT TP", "🛑 HIT SL", "🔄 ACTIVE"]
-    }
-    st.table(pd.DataFrame(history_data))
+    fig.update_layout(height=600, template="plotly_dark", xaxis_rangeslider_visible=False, margin=dict(l=0,r=0,t=0,b=0))
+    st.plotly_chart(fig, use_container_width=True)
 
 render_app()
