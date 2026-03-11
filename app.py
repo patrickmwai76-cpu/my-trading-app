@@ -6,7 +6,7 @@ import plotly.graph_objects as go
 from datetime import datetime
 
 # --- 1. CORE CONFIG ---
-st.set_page_config(page_title="PATRO AI PRO V12.0.2", layout="wide")
+st.set_page_config(page_title="PATRO AI PRO V12.0.4", layout="wide")
 st.markdown("<style>.stApp { background: #010101; color: #ffffff; }</style>", unsafe_allow_html=True)
 
 # --- 2. DATA ENGINE ---
@@ -29,7 +29,7 @@ def get_market_data(ticker, interval="5m"):
         return None
 
 # --- 3. SIDEBAR CONTROLS ---
-st.title("🌌 PATRO AI PRO V12.0.2 | SMC ULTIMATE")
+st.title("🌌 PATRO AI PRO V12.0.4 | SMC ULTIMATE")
 
 with st.sidebar:
     st.header("🏢 COMMAND CENTER")
@@ -42,10 +42,10 @@ with st.sidebar:
     
     st.divider()
     st.subheader("📡 LIVE NEWS ALERTS")
-    # Real-time News for March 10, 2026
-    st.error("🚨 VOLATILITY: Trump claims Iran war ends 'soon'. Gold sensitive to $5,180.")
-    st.warning("📅 TOMORROW: US CPI Inflation Report (8:30 AM ET). Expect massive gaps.")
-    st.info("📉 OIL: Down -6%, removing some inflationary pressure from Gold.")
+    # Updated News for March 11, 2026
+    st.error("🚨 CPI DATA: US Inflation report out at 8:30 AM ET today. Markets will spike!")
+    st.warning("⚔️ GEOPOLITICS: Pentagon promises 'intense' strikes despite Trump comments.")
+    st.info("📉 OIL: Below $90/bbl, pulling some safe-haven premium from Gold.")
 
 # --- 4. LIVE DASHBOARD ---
 @st.fragment(run_every="15s")
@@ -57,20 +57,26 @@ def render_app():
         st.error("Searching for Bank Liquidity...")
         return
 
-    # Logic Calculations
+    # --- LOGIC CALCULATIONS (Combined) ---
     bias_1h = "BULLISH" if df_1h.Close.iloc[-1] > df_1h.VWAP.iloc[-1] else "BEARISH"
     curr_sig = "BUY" if df_5m.Close.iloc[-1] > df_5m.VWAP.iloc[-1] else "SELL"
+    
+    # 2-Minute Confirmation (Checks if the last 2 candles held above/below VWAP)
+    confirmed = False
+    if curr_sig == "BUY":
+        confirmed = df_5m.Close.iloc[-1] > df_5m.VWAP.iloc[-1] and df_5m.Close.iloc[-2] > df_5m.VWAP.iloc[-2]
+    else:
+        confirmed = df_5m.Close.iloc[-1] < df_5m.VWAP.iloc[-1] and df_5m.Close.iloc[-2] < df_5m.VWAP.iloc[-2]
+
     bank_vol = df_5m.Volume.iloc[-1] > (df_5m.Volume.tail(20).mean() * 1.5)
     
-    # Trend Strength Calculation (0-100)
+    # Trend Strength Calculation (Updated with 2-Min Confirmation)
     strength = 0
-    if (curr_sig == "BUY" and df_5m.RSI.iloc[-1] > 50) or (curr_sig == "SELL" and df_5m.RSI.iloc[-1] < 50): strength += 30
-    if (curr_sig == "BUY" and bias_1h == "BULLISH") or (curr_sig == "SELL" and bias_1h == "BEARISH"): strength += 40
-    if bank_vol: strength += 30
+    if (curr_sig == "BUY" and df_5m.RSI.iloc[-1] > 50) or (curr_sig == "SELL" and df_5m.RSI.iloc[-1] < 50): strength += 20
+    if (curr_sig == "BUY" and bias_1h == "BULLISH") or (curr_sig == "SELL" and bias_1h == "BEARISH"): strength += 30
+    if bank_vol: strength += 20
+    if confirmed: strength += 30 # Added 30% for 2-minute consistency
 
-    # 2-Minute Confirmation Logic (Checks if last 2 candles held the signal)
-    confirmed = df_5m.Close.iloc[-1] > df_5m.VWAP.iloc[-1] and df_5m.Close.iloc[-2] > df_5m.VWAP.iloc[-2]
-    
     # SIGNAL UI
     if mode:
         status, col = f"🚀 SCALP {curr_sig}", ("#00FF88" if curr_sig == "BUY" else "#FF3366")
@@ -86,7 +92,11 @@ def render_app():
     m3.metric("STRENGTH", f"{strength}%")
 
     st.progress(strength / 100)
-    if strength < 60: st.warning("⚠️ Low Strength: Market is currently 'sideways'. Avoid large lots.")
+    
+    if strength < 60: 
+        st.warning("⚠️ Low Strength: Market is currently 'sideways' or filling gaps. Avoid large lots.")
+    elif strength >= 80:
+        st.success("🔥 HIGH CONVICTION: Institutions are moving. Look for entry in the Boxes.")
 
     # --- THE CHART ---
     fig = go.Figure()
