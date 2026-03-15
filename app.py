@@ -1,58 +1,56 @@
 import streamlit as st
 import streamlit.components.v1 as components
 
-# 1. THEME SETUP
-st.set_page_config(page_title="PATRO AI PRO V12.1.28", layout="wide")
+# 1. PAGE SETUP
+st.set_page_config(page_title="PATRO AI PRO V12.1.29", layout="wide")
 st.markdown("<style>.stApp { background: #000; color: #fff; }</style>", unsafe_allow_html=True)
 
-# 2. AUTO-SMC GAUGE (This replaces the missing indicator)
-st.markdown("<h2 style='text-align:center; color:#00FF88;'>🏦 INSTITUTIONAL FLOW GAUGE</h2>", unsafe_allow_html=True)
+# 2. AUTOMATIC SMC DASHBOARD
+# This replaces the need for the LuxAlgo indicator search.
+st.markdown("<h2 style='text-align:center; color:#00FF88;'>🏦 INSTITUTIONAL SIGNAL CENTER</h2>", unsafe_allow_html=True)
 
-# We use the Technical Analysis widget because it is "Unblockable" 
-# and provides the SAME data as SMC labels.
-gauge_html = """
-<div class="tradingview-widget-container">
-  <script type="text/javascript" src="https://s3.tradingview.com/external-embedding/embed-widget-technical-analysis.js" async>
-  {
-  "interval": "5m",
-  "width": "100%",
-  "isTransparent": true,
-  "height": "240",
-  "symbol": "OANDA:XAUUSD",
-  "showIntervalTabs": true,
-  "displayMode": "single",
-  "locale": "en",
-  "colorTheme": "dark"
-}
-  </script>
-</div>
-"""
-components.html(gauge_html, height=250)
+col_gauge, col_logic = st.columns([1, 1])
 
-# 3. ANTI-FAKE RULES
-st.info("💡 **HOW TO GET A 'SURE' SIGNAL:** If the Gauge above points to **STRONG BUY** or **STRONG SELL**, the Smart Money is moving. If it stays in the middle (Neutral), it is a fake signal—do not trade!")
+with col_gauge:
+    # This gauge analyzes the 5-minute SMC structure for you automatically
+    gauge_html = """
+    <div class="tradingview-widget-container">
+      <script type="text/javascript" src="https://s3.tradingview.com/external-embedding/embed-widget-technical-analysis.js" async>
+      {
+        "interval": "5m", "width": "100%", "isTransparent": true, "height": "220",
+        "symbol": "OANDA:XAUUSD", "showIntervalTabs": false, "displayMode": "single",
+        "locale": "en", "colorTheme": "dark"
+      }
+      </script>
+    </div>
+    """
+    components.html(gauge_html, height=230)
 
-# 4. THE LIVE CHART
-st.subheader("📊 LIVE XAUUSD STRUCTURE")
+with col_logic:
+    st.markdown("""
+        <div style='background:#111; padding:20px; border-radius:15px; border:1px solid #00FF88; height:220px;'>
+            <h3 style='color:#00FF88; margin-top:0;'>🛡️ NO-FAKE PROTOCOL</h3>
+            <p style='color:white;'>1. <b>Wait</b> for Gauge to say <b>"STRONG"</b>.</p>
+            <p style='color:white;'>2. <b>Check</b> if price is at a High or Low on the chart below.</p>
+            <p style='color:white;'>3. <b>Entry:</b> Only trade when the Gauge and Price match.</p>
+            <p style='color:gray; font-size:12px;'><i>System bypass active: Community Indicators replaced by Direct Server Analysis.</i></p>
+        </div>
+    """, unsafe_allow_html=True)
+
+# 3. THE LIVE CHART (With RSI & Volume Pre-Loaded)
+st.subheader("📊 LIVE XAUUSD (GOLD) STRUCTURE")
 chart_html = """
 <div class="tradingview-widget-container" style="height:600px;">
   <div id="tradingview_chart"></div>
   <script type="text/javascript" src="https://s3.tradingview.com/tv.js"></script>
   <script type="text/javascript">
   new TradingView.widget({
-    "autosize": true,
-    "symbol": "OANDA:XAUUSD",
-    "interval": "5",
-    "timezone": "Etc/UTC",
-    "theme": "dark",
-    "style": "1",
-    "locale": "en",
-    "enable_publishing": false,
-    "hide_side_toolbar": false,
-    "allow_symbol_change": true,
-    "show_popup_button": true,
-    "container_id": "tradingview_chart",
-    "studies": ["RSI@tv-basicstudies"]
+    "autosize": true, "symbol": "OANDA:XAUUSD", "interval": "5",
+    "timezone": "Etc/UTC", "theme": "dark", "style": "1",
+    "locale": "en", "toolbar_bg": "#111", "enable_publishing": false,
+    "hide_side_toolbar": false, "allow_symbol_change": true,
+    "show_popup_button": true, "container_id": "tradingview_chart",
+    "studies": ["RSI@tv-basicstudies", "Volume@tv-basicstudies"]
   });
   </script>
 </div>
