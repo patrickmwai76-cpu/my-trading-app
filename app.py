@@ -1,43 +1,37 @@
 import streamlit as st
 import streamlit.components.v1 as components
 
-# 1. PAGE SETUP
-st.set_page_config(page_title="PATRO AI PRO V12.1.29", layout="wide")
+# 1. CORE INTERFACE
+st.set_page_config(page_title="PATRO AI PRO V12.1.30", layout="wide")
 st.markdown("<style>.stApp { background: #000; color: #fff; }</style>", unsafe_allow_html=True)
 
-# 2. AUTOMATIC SMC DASHBOARD
-# This replaces the need for the LuxAlgo indicator search.
+# 2. THE SIGNAL CENTER (VWAP + SMC Logic)
 st.markdown("<h2 style='text-align:center; color:#00FF88;'>🏦 INSTITUTIONAL SIGNAL CENTER</h2>", unsafe_allow_html=True)
 
-col_gauge, col_logic = st.columns([1, 1])
+col1, col2 = st.columns([1, 1])
 
-with col_gauge:
-    # This gauge analyzes the 5-minute SMC structure for you automatically
+with col1:
+    # Technical Gauge (The "No-Fake" Filter)
     gauge_html = """
     <div class="tradingview-widget-container">
       <script type="text/javascript" src="https://s3.tradingview.com/external-embedding/embed-widget-technical-analysis.js" async>
-      {
-        "interval": "5m", "width": "100%", "isTransparent": true, "height": "220",
-        "symbol": "OANDA:XAUUSD", "showIntervalTabs": false, "displayMode": "single",
-        "locale": "en", "colorTheme": "dark"
-      }
+      { "interval": "5m", "width": "100%", "isTransparent": true, "height": "220", "symbol": "OANDA:XAUUSD", "showIntervalTabs": false, "displayMode": "single", "locale": "en", "colorTheme": "dark" }
       </script>
     </div>
     """
     components.html(gauge_html, height=230)
 
-with col_logic:
+with col2:
     st.markdown("""
         <div style='background:#111; padding:20px; border-radius:15px; border:1px solid #00FF88; height:220px;'>
-            <h3 style='color:#00FF88; margin-top:0;'>🛡️ NO-FAKE PROTOCOL</h3>
-            <p style='color:white;'>1. <b>Wait</b> for Gauge to say <b>"STRONG"</b>.</p>
-            <p style='color:white;'>2. <b>Check</b> if price is at a High or Low on the chart below.</p>
-            <p style='color:white;'>3. <b>Entry:</b> Only trade when the Gauge and Price match.</p>
-            <p style='color:gray; font-size:12px;'><i>System bypass active: Community Indicators replaced by Direct Server Analysis.</i></p>
+            <h3 style='color:#00FF88; margin-top:0;'>⚓ VWAP PROTOCOL</h3>
+            <p>🔵 <b>Price > VWAP:</b> Market is Bullish. Look for Buys at the VWAP line.</p>
+            <p>🔴 <b>Price < VWAP:</b> Market is Bearish. Look for Sells at the VWAP line.</p>
+            <p>🛡️ <b>Confirmation:</b> Only enter if the Gauge and VWAP direction match!</p>
         </div>
     """, unsafe_allow_html=True)
 
-# 3. THE LIVE CHART (With RSI & Volume Pre-Loaded)
+# 3. THE LIVE CHART (VWAP & SMC Access Enabled)
 st.subheader("📊 LIVE XAUUSD (GOLD) STRUCTURE")
 chart_html = """
 <div class="tradingview-widget-container" style="height:600px;">
@@ -50,7 +44,11 @@ chart_html = """
     "locale": "en", "toolbar_bg": "#111", "enable_publishing": false,
     "hide_side_toolbar": false, "allow_symbol_change": true,
     "show_popup_button": true, "container_id": "tradingview_chart",
-    "studies": ["RSI@tv-basicstudies", "Volume@tv-basicstudies"]
+    "studies": [
+        "VWAP@tv-basicstudies", 
+        "RSI@tv-basicstudies", 
+        "Volume@tv-basicstudies"
+    ]
   });
   </script>
 </div>
