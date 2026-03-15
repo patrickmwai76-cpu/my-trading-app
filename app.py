@@ -1,9 +1,8 @@
 import streamlit as st
 import streamlit.components.v1 as components
-import pandas as pd
 
-# 1. THEME & LAYOUT
-st.set_page_config(page_title="PATRO AI PRO V12.1.23", layout="wide")
+# 1. CORE INTERFACE
+st.set_page_config(page_title="PATRO AI PRO V12.1.25", layout="wide")
 st.markdown("""
     <style>
     .stApp { background: #000; color: #fff; }
@@ -17,64 +16,51 @@ with st.sidebar:
     asset_choice = st.selectbox("Select Target", ["GOLD (XAUUSD)", "GBPUSD", "US30", "BITCOIN"])
     
     tv_symbols = {
-        "GOLD (XAUUSD)": "OANDA:XAUUSD",
-        "GBPUSD": "FX:GBPUSD",
-        "US30": "CURRENCYCOM:US30",
-        "BITCOIN": "BINANCE:BTCUSDT"
+        "GOLD (XAUUSD)": "OANDA:XAUUSD", "GBPUSD": "FX:GBPUSD",
+        "US30": "CURRENCYCOM:US30", "BITCOIN": "BINANCE:BTCUSDT"
     }
     target_sym = tv_symbols[asset_choice]
 
     st.divider()
-    st.subheader("✅ ANTI-FAKE CHECKLIST")
+    st.subheader("✅ NO-FAKE CHECKLIST")
     c1 = st.checkbox("SMC Zone Touched?")
     c2 = st.checkbox("CHoCH/BOS Confirmed?")
-    c3 = st.checkbox("Volume Spike Detected?")
+    c3 = st.checkbox("Gauge says 'STRONG'?")
     
     if c1 and c2 and c3:
         st.success("🔥 SIGNAL: HIGH CONVICTION")
     else:
-        st.warning("⚠️ STATUS: ANALYZING STRUCTURE")
+        st.warning("⚠️ STATUS: ANALYZING")
 
-# 3. TOP DASHBOARD (TikTok Style)
+# 3. TOP DASHBOARD (The Signal Filter)
 col1, col2, col3 = st.columns([2, 1, 1])
 
 with col1:
-    status_text = "BANK BUY ZONE" if (c1 and c2 and c3) else "WAITING FOR LIQUIDITY"
+    status_text = "BANK ENTRY ACTIVE" if (c1 and c2 and c3) else "WAITING FOR SMC SETUP"
     border_col = "#00FF88" if (c1 and c2 and c3) else "#555"
     st.markdown(f"""
         <div style='border:3px solid {border_col}; padding:20px; border-radius:15px; background:#111; text-align:center;'>
             <h1 style='color:{border_col}; margin:0;'>{status_text}</h1>
-            <p style='color:gray; margin:0;'>Institutional Flow Analysis Active</p>
         </div>
     """, unsafe_allow_html=True)
 
 with col2:
-    # Live Technical Gauge for "Sure" Signals
+    # Technical Gauge
     gauge_html = f"""
     <div class="tradingview-widget-container">
       <script type="text/javascript" src="https://s3.tradingview.com/external-embedding/embed-widget-technical-analysis.js" async>
-      {{
-      "interval": "5m",
-      "width": "100%",
-      "isTransparent": true,
-      "height": "180",
-      "symbol": "{target_sym}",
-      "showIntervalTabs": false,
-      "displayMode": "single",
-      "locale": "en",
-      "colorTheme": "dark"
-    }}
+      {{ "interval": "5m", "width": "100%", "isTransparent": true, "height": "180", "symbol": "{target_sym}", "showIntervalTabs": false, "displayMode": "single", "locale": "en", "colorTheme": "dark" }}
       </script>
     </div>
     """
-    components.html(gauge_html, height=200)
+    components.html(gauge_html, height=190)
 
 with col3:
-    st.metric("CONFIDENCE", "92%" if (c1 and c2) else "40%", "+5% Today")
+    st.metric("SMC SPREAD", "0.1", "Low Cost")
+    st.metric("VOLATILITY", "High", "Optimal")
 
-# 4. THE LIVE CHART (With Auto-Indicators)
-st.subheader(f"📊 {asset_choice} LIVE SMC STRUCTURE")
-
+# 4. THE LIVE CHART (Popup Button Restored)
+st.subheader(f"📊 {asset_choice} 5M STRUCTURE")
 chart_html = f"""
 <div class="tradingview-widget-container" style="height:600px;">
   <div id="tradingview_chart"></div>
@@ -91,22 +77,21 @@ chart_html = f"""
     "enable_publishing": false,
     "hide_side_toolbar": false,
     "allow_symbol_change": true,
+    "show_popup_button": true,  /* This restores the pop-up expand button */
+    "popup_width": "1000",
+    "popup_height": "650",
     "container_id": "tradingview_chart",
-    "studies": [
-      "RSI@tv-basicstudies",
-      "BollingerBands@tv-basicstudies",
-      "Volume@tv-basicstudies"
-    ]
+    "studies": ["RSI@tv-basicstudies", "BollingerBands@tv-basicstudies"]
   }});
   </script>
 </div>
 """
 components.html(chart_html, height=600)
 
-# 5. SMC RULES BOX
+# 5. MARKET SESSIONS
 st.divider()
-st.markdown("### 🏛️ SMART MONEY RULES")
-r1, r2, r3 = st.columns(3)
-r1.info("**STEP 1: Identify**\nWait for price to hit a Supply or Demand zone.")
-r2.info("**STEP 2: Confirm**\nLook for RSI to cross 50 and Volume to turn Green.")
-r3.info("**STEP 3: Execute**\nEnter with a 1:3 Risk/Reward ratio.")
+st.subheader("🕒 LIVE MARKET SESSIONS (EST)")
+s1, s2, s3 = st.columns(3)
+s1.info("**LONDON**\n3:00 AM - 12:00 PM")
+s2.success("**NEW YORK**\n8:00 AM - 5:00 PM")
+s3.warning("**TOKYO**\n7:00 PM - 4:00 AM")
