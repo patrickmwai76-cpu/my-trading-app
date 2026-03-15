@@ -1,85 +1,93 @@
 import streamlit as st
 import streamlit.components.v1 as components
 
-# 1. CORE INTERFACE
-st.set_page_config(page_title="PATRO AI PRO V12.1.32", layout="wide")
+# 1. PAGE SETUP
+st.set_page_config(page_title="PATRO AI PRO V12.1.33", layout="wide")
 st.markdown("<style>.stApp { background: #000; color: #fff; }</style>", unsafe_allow_html=True)
 
-# 2. LIVE NEWS TICKER TAPE (Top of Page)
-ticker_tape_html = """
+# 2. THE MARKET KILLER HEADER (DXY & News)
+ticker_html = """
 <div class="tradingview-widget-container">
   <script type="text/javascript" src="https://s3.tradingview.com/external-embedding/embed-widget-ticker-tape.js" async>
   {
   "symbols": [
-    { "proName": "FOREXCOM:SPXUSD", "title": "S&P 500" },
-    { "proName": "FX_IDC:EURUSD", "title": "EUR/USD" },
-    { "proName": "BITSTAMP:BTCUSD", "title": "Bitcoin" },
-    { "description": "GOLD", "proName": "OANDA:XAUUSD" }
+    { "proName": "INDEX:DXY", "title": "USD INDEX (DXY)" },
+    { "proName": "OANDA:XAUUSD", "title": "GOLD" },
+    { "proName": "FX_IDC:EURUSD", "title": "EUR/USD" }
   ],
   "showSymbolLogo": true, "colorTheme": "dark", "isTransparent": true, "displayMode": "adaptive", "locale": "en"
-  }
+}
   </script>
 </div>
 """
 components.html(ticker_tape_html, height=50)
 
-# 3. THE SIGNAL CENTER (VWAP + SMC Logic)
-st.markdown("<h2 style='text-align:center; color:#00FF88;'>🏦 INSTITUTIONAL SIGNAL CENTER</h2>", unsafe_allow_html=True)
+# 3. SMC RISK CALCULATOR (The Account Saver)
+st.sidebar.header("🛡️ RISK CALCULATOR")
+balance = st.sidebar.number_input("Account Balance ($)", value=1000)
+risk_percent = st.sidebar.slider("Risk Per Trade (%)", 0.5, 5.0, 1.0)
+stop_loss_pips = st.sidebar.number_input("Stop Loss (Pips)", value=20)
 
-col1, col2 = st.columns([1, 1])
+risk_amount = balance * (risk_percent / 100)
+# Standard Gold calculation for lot size
+lot_size = risk_amount / (stop_loss_pips * 10) 
 
-with col1:
-    # Technical Gauge (The "No-Fake" Filter)
+st.sidebar.success(f"PRO LOT SIZE: {lot_size:.2f}")
+st.sidebar.info(f"You are risking: ${risk_amount:.2f}")
+
+# 4. INSTITUTIONAL CORRELATION HUB
+st.markdown("<h2 style='text-align:center; color:#00FF88;'>🏦 INSTITUTIONAL KILLER HUB</h2>", unsafe_allow_html=True)
+col_gauge, col_dxy = st.columns([1, 1])
+
+with col_gauge:
+    # SMC Analysis Gauge
     gauge_html = """
     <div class="tradingview-widget-container">
       <script type="text/javascript" src="https://s3.tradingview.com/external-embedding/embed-widget-technical-analysis.js" async>
-      { "interval": "5m", "width": "100%", "isTransparent": true, "height": "220", "symbol": "OANDA:XAUUSD", "showIntervalTabs": false, "displayMode": "single", "locale": "en", "colorTheme": "dark" }
+      { "interval": "15m", "width": "100%", "isTransparent": true, "height": "220", "symbol": "OANDA:XAUUSD", "showIntervalTabs": false, "displayMode": "single", "locale": "en", "colorTheme": "dark" }
       </script>
     </div>
     """
     components.html(gauge_html, height=230)
 
-with col2:
-    st.markdown("""
-        <div style='background:#111; padding:20px; border-radius:15px; border:1px solid #00FF88; height:220px;'>
-            <h3 style='color:#00FF88; margin-top:0;'>⚓ VWAP PROTOCOL</h3>
-            <p>🔵 <b>Price > VWAP:</b> Market is Bullish. Look for Buys at the VWAP line.</p>
-            <p>🔴 <b>Price < VWAP:</b> Market is Bearish. Look for Sells at the VWAP line.</p>
-            <p>🛡️ <b>Confirmation:</b> Only enter if the Gauge and VWAP direction match!</p>
-        </div>
-    """, unsafe_allow_html=True)
+with col_dxy:
+    # DXY Comparison (If DXY is Red, Gold is Green)
+    st.markdown("<p style='text-align:center; color:#888;'>DXY CORRELATION (DOLLAR)</p>", unsafe_allow_html=True)
+    dxy_gauge = """
+    <div class="tradingview-widget-container">
+      <script type="text/javascript" src="https://s3.tradingview.com/external-embedding/embed-widget-mini-symbol-overview.js" async>
+      { "symbol": "INDEX:DXY", "width": "100%", "height": "180", "locale": "en", "dateRange": "12M", "colorTheme": "dark", "trendLineColor": "#37a6ef", "underLineColor": "rgba(55, 166, 239, 0.15)", "isTransparent": true, "autosize": false }
+      </script>
+    </div>
+    """
+    components.html(dxy_gauge, height=190)
 
-# 4. THE LIVE CHART
-st.subheader("📊 LIVE XAUUSD (GOLD) STRUCTURE")
+# 5. LIVE CHART
+st.subheader("📊 LIVE XAUUSD MARKET STRUCTURE")
 chart_html = """
-<div class="tradingview-widget-container" style="height:550px;">
+<div class="tradingview-widget-container" style="height:600px;">
   <div id="tradingview_chart"></div>
   <script type="text/javascript" src="https://s3.tradingview.com/tv.js"></script>
   <script type="text/javascript">
   new TradingView.widget({
-    "autosize": true, "symbol": "OANDA:XAUUSD", "interval": "5",
+    "autosize": true, "symbol": "OANDA:XAUUSD", "interval": "15",
     "timezone": "Etc/UTC", "theme": "dark", "style": "1",
     "locale": "en", "toolbar_bg": "#111", "enable_publishing": false,
     "hide_side_toolbar": false, "allow_symbol_change": true,
     "show_popup_button": true, "container_id": "tradingview_chart",
-    "studies": ["VWAP@tv-basicstudies", "RSI@tv-basicstudies"]
+    "studies": ["VWAP@tv-basicstudies"]
   });
   </script>
 </div>
 """
-components.html(chart_html, height=550)
+components.html(chart_html, height=600)
 
-# 5. ECONOMIC NEWS CALENDAR (Bottom of Page)
-st.divider()
-st.subheader("📅 ECONOMIC NEWS ALERTS")
+# 6. ECONOMIC CALENDAR (The News Filter)
 calendar_html = """
 <div class="tradingview-widget-container">
   <script type="text/javascript" src="https://s3.tradingview.com/external-embedding/embed-widget-events.js" async>
-  {
-  "colorTheme": "dark", "isTransparent": true, "width": "100%", "height": "400",
-  "locale": "en", "importanceFilter": "-1,0,1", "currencyFilter": "USD,EUR,GBP"
-  }
+  { "colorTheme": "dark", "isTransparent": true, "width": "100%", "height": "300", "locale": "en", "importanceFilter": "-1,0,1" }
   </script>
 </div>
 """
-components.html(calendar_html, height=410)
+components.html(calendar_html, height=310)
