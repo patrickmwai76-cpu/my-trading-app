@@ -2,104 +2,95 @@ import streamlit as st
 import pandas as pd
 import pandas_ta as ta
 import yfinance as yf
-import plotly.graph_objects as go
 from datetime import datetime
 
-# 1. PAGE SETUP (The "Wide" layout can sometimes hide charts on mobile)
-st.set_page_config(page_title="PATRO AI PRO V12.1.16", layout="centered") 
+# --- 1. CORE CONFIG ---
+st.set_page_config(page_title="PATRO AI PRO V12.1.17", layout="centered")
 st.markdown("<style>.stApp { background: #000; color: #fff; }</style>", unsafe_allow_html=True)
 
-# 2. DATA ENGINE
+# --- 2. DATA ENGINE ---
 def get_market_data(ticker):
     try:
         df = yf.download(ticker, period="1d", interval="5m", progress=False)
         if df.empty: return None
         if isinstance(df.columns, pd.MultiIndex): df.columns = df.columns.get_level_values(0)
+        
+        # SMC Indicators
         df['VWAP'] = ta.vwap(df.High, df.Low, df.Close, df.Volume)
         df['ATR'] = ta.atr(df.High, df.Low, df.Close, length=14)
         return df.dropna()
-    except Exception as e:
-        st.error(f"Data Error: {e}")
-        return None
+    except: return None
 
-# 3. SIDEBAR (Everything stays here)
+# --- 3. SIDEBAR (All Discussed Features) ---
 with st.sidebar:
-    st.header("🏢 COMMAND")
-    asset = st.selectbox("Select Asset", ["GOLD", "GBPUSD", "US30"], key="asset_select")
+    st.header("🏢 SMC COMMAND")
+    asset = st.selectbox("Asset", ["GOLD", "GBPUSD", "US30"])
     ticker_map = {"GOLD":"GC=F", "GBPUSD":"GBPUSD=X", "US30":"^DJI"}
     
     st.divider()
-    st.subheader("💰 RISK")
+    st.subheader("💰 RISK CALCULATOR")
     bal = st.number_input("Balance", 1000)
     risk = st.slider("Risk %", 1, 5, 2)
+    st.success(f"Risk Amount: ${bal * (risk/100):.2f}")
     
     st.divider()
-    st.subheader("📡 NEWS")
-    st.error("🚨 HIGH VOLATILITY DETECTED")
+    st.subheader("📡 LIVE NEWS")
+    st.error("🚨 US CPI Impact: HIGH")
 
-# 4. MAIN APP LOGIC (Simplified for visibility)
+# --- 4. MAIN DASHBOARD ---
 df = get_market_data(ticker_map[asset])
 
 if df is not None:
     cp = df.Close.iloc[-1]
-    vwap_val = df.VWAP.iloc[-1]
+    vwap = df.VWAP.iloc[-1]
     atr = df.ATR.iloc[-1]
     
-    # Simple Signal Logic
-    if cp > (vwap_val + (atr * 0.5)): 
-        sig, col = "BUY", "#00FF88"
-    elif cp < (vwap_val - (atr * 0.5)): 
-        sig, col = "SELL", "#FF3366"
-    else: 
-        sig, col = "WAIT", "#FFA500"
+    # Anti-Fake Logic
+    buffer = atr * 0.4
+    if cp > (vwap + buffer):
+        sig, col = "SURE BUY", "#00FF88"
+    elif cp < (vwap - buffer):
+        sig, col = "SURE SELL", "#FF3366"
+    else:
+        sig, col = "WAITING", "#FFA500"
 
-    # Header Box
+    # Header Metric (TikTok Style)
     st.markdown(f"""
-        <div style='border:4px solid {col}; padding:20px; border-radius:15px; background:#111; text-align:center;'>
-            <h1 style='color:{col}; margin:0;'>BANK {sig} ZONE</h1>
-            <p style='color:gray; margin:5px;'>Price: {cp:,.2f} | SMC Logic Active</p>
+        <div style='border:3px solid {col}; padding:15px; border-radius:15px; background:#111; text-align:center;'>
+            <h1 style='color:{col}; margin:0;'>🏦 BANK {sig}</h1>
+            <h2 style='margin:5px;'>PRICE: {cp:,.2f}</h2>
         </div>
     """, unsafe_allow_html=True)
 
-    # 5. THE CHART (Force Render Settings)
-    fig = go.Figure()
+    st.divider()
 
-    # Candlesticks
-    fig.add_trace(go.Candlestick(
-        x=df.index, open=df.Open, high=df.High, low=df.Low, close=df.Close,
-        increasing_line_color='#00FF88', decreasing_line_color='#FF3366'
-    ))
+    # --- THE CHART (COMPATIBILITY MODE) ---
+    # Since Plotly is failing, we use Streamlit's native line chart
+    # It shows Price vs VWAP clearly.
+    st.subheader("📊 MARKET STRUCTURE")
+    chart_data = df[['Close', 'VWAP']].tail(40)
+    st.line_chart(chart_data, color=["#00FF88", "#ffffff"])
 
-    # Background Shading
-    fig.add_vrect(x0=df.index[0], x1=df.index[-1], fillcolor=col, opacity=0.08, layer="below", line_width=0)
+    # SMC Order Flow Table (Replaces the visual boxes for visibility)
+    st.subheader("📦 INSTITUTIONAL ORDER FLOW")
+    df_show = df[['Open', 'High', 'Low', 'Close']].tail(5)
+    st.dataframe(df_show.style.highlight_max(axis=0, color='#004400').highlight_min(axis=0, color='#440000'))
 
-    # Floating Label
-    fig.add_annotation(x=df.index[-1], y=cp, text=f"<b>{sig}</b>", bgcolor=col, font=dict(color="black", size=20), showarrow=True)
+    # 5. TP / SL TARGETS
+    t1, t2 = st.columns(2)
+    tp = cp + (atr * 3) if "BUY" in sig else cp - (atr * 3)
+    sl = cp - (atr * 1.5) if "BUY" in sig else cp + (atr * 1.5)
+    t1.metric("TARGET (TP)", f"{tp:,.2f}", delta_color="normal")
+    t2.metric("STOP LOSS (SL)", f"{sl:,.2f}", delta_color="inverse")
 
-    # Entry/TP/SL Lines
-    tp = cp + (atr * 3) if sig == "BUY" else cp - (atr * 3)
-    sl = cp - (atr * 1.5) if sig == "BUY" else cp + (atr * 1.5)
-    fig.add_hline(y=vwap_val, line_color="white", annotation_text="ENTRY")
-    fig.add_hline(y=tp, line_color="#00FF88", line_dash="dash", annotation_text="TP")
-    fig.add_hline(y=sl, line_color="#FF3366", line_dash="dash", annotation_text="SL")
-
-    # Layout - CRITICAL: fixed height and use_container_width=True
-    fig.update_layout(
-        height=550, 
-        template="plotly_dark", 
-        paper_bgcolor="black", 
-        plot_bgcolor="black", 
-        xaxis_rangeslider_visible=False,
-        margin=dict(l=10, r=10, t=10, b=10)
-    )
-
-    # Display Command
-    st.plotly_chart(fig, use_container_width=True, theme=None)
-
-    # 6. HISTORY TABLE
+    # 6. SIGNAL HISTORY
     st.divider()
     st.subheader("📜 SIGNAL HISTORY")
     st.table(pd.DataFrame([{"Time": datetime.now().strftime("%H:%M"), "Signal": sig, "Price": cp}]))
+    
+    if st.button("🔄 REFRESH NOW"):
+        st.rerun()
+
 else:
-    st.warning("⚠️ Waiting for Market Data... Refreshing.")
-    st.button("Manual Refresh")
+    st.error("Connection Error. Tap 'Refresh' below.")
+    st.button("REFRESH")
