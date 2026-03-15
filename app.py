@@ -4,10 +4,10 @@ from datetime import datetime
 import pytz
 
 # 1. CORE INTERFACE & THEME
-st.set_page_config(page_title="PATRO AI PRO V12.1.46", layout="wide")
+st.set_page_config(page_title="PATRO AI PRO V12.1.47", layout="wide")
 st.markdown("<style>.stApp { background: #000; color: #fff; }</style>", unsafe_allow_html=True)
 
-# 2. TOP HUD: THE "NEWS SHIELD" & KILLZONES
+# 2. TOP HUD: THE "NEWS SHIELD" & KILLZONES (Restored)
 def get_status():
     now = datetime.now(pytz.utc)
     if 13 <= now.hour < 16: return "🔥 NY KILLZONE ACTIVE"
@@ -23,7 +23,7 @@ components.html("""
 </div>
 """, height=210)
 
-# 3. DUAL-SIGNAL GAUGE HUB (XAUUSD & DXY)
+# 3. DUAL-SIGNAL GAUGE HUB (XAUUSD & DXY) (Restored)
 st.markdown("---")
 col_g, col_d = st.columns(2)
 with col_g:
@@ -42,15 +42,15 @@ with col_d:
     </script></div>
     """, height=390)
 
-# 4. MARKET TICKER (GOLD/SILVER & DXY)
+# 4. MARKET TICKER (GOLD/SILVER & DXY) (Restored)
 components.html("""
 <div class="tradingview-widget-container"><script type="text/javascript" src="https://s3.tradingview.com/external-embedding/embed-widget-ticker-tape.js" async>
 { "symbols": [{"proName": "TVC:DXY", "title": "DXY"}, {"proName": "OANDA:XAUUSD", "title": "GOLD"}, {"proName": "GOLD/SILVER", "title": "G/S RATIO"}], "colorTheme": "dark", "isTransparent": true }
 </script></div>
 """, height=50)
 
-# 5. THE SMC CHART (Auto TP/SL & Liquidity Lines)
-st.subheader("📊 SMART MONEY CHART (TP/SL & LIQUIDITY)")
+# 5. THE SMC CHART (With Pop-up & Indicators)
+st.subheader("📊 SMART MONEY CHART (SMC & LIQUIDITY)")
 components.html("""
 <div class="tradingview-widget-container" style="height:600px;">
   <div id="tv_final"></div>
@@ -59,6 +59,9 @@ components.html("""
   new TradingView.widget({
     "autosize": true, "symbol": "OANDA:XAUUSD", "interval": "15",
     "theme": "dark", "style": "1", "container_id": "tv_final",
+    "show_popup_button": true,  /* THE POP-UP BUTTON IS BACK */
+    "popup_width": "1000",
+    "popup_height": "650",
     "studies": [
         "STD;Fair_Value_Gap",
         "STD;Order_Block",
@@ -70,7 +73,7 @@ components.html("""
 </div>
 """, height=610)
 
-# 6. SIDEBAR: THE KILLER RISK CALCULATOR
+# 6. SIDEBAR: THE KILLER RISK CALCULATOR (Restored)
 st.sidebar.header("🛡️ RISK & TARGETS")
 bal = st.sidebar.number_input("Balance ($)", value=1000)
 risk_pct = st.sidebar.slider("Risk %", 0.5, 3.0, 1.0)
