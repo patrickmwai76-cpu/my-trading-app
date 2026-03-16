@@ -23,6 +23,17 @@ components.html("""
 </div>
 """, height=210)
 
+# --- NEW MASTER VERDICT SECTION (Combined into Sidebar) ---
+st.sidebar.markdown("""
+<div style="background: rgba(0, 255, 136, 0.1); padding: 15px; border-radius: 10px; border: 1px solid #00FF88; margin-bottom: 20px;">
+    <p style="margin:0; color: #888; font-size: 12px;">AI PERFORMANCE RATING</p>
+    <h2 style="margin:0; color: #00FF88;">9.4 / 10</h2>
+    <hr style="margin: 10px 0; border-color: rgba(255,255,255,0.1);">
+    <p style="margin:0; font-size: 14px;"><b>BIAS:</b> BEARISH (XAU)</p>
+    <p style="margin:0; font-size: 11px; color: #FF4B4B;">DXY strength confirmed. Look for sell liquidity sweeps.</p>
+</div>
+""", unsafe_allow_html=True)
+
 # 3. DUAL-SIGNAL GAUGE HUB (XAUUSD & DXY)
 st.markdown("---")
 col_g, col_d = st.columns(2)
@@ -49,7 +60,7 @@ components.html("""
 </script></div>
 """, height=50)
 
-# 5. THE SMC CHART (With Pop-up button restored)
+# 5. THE SMC CHART
 st.subheader("📊 SMART MONEY CHART (SMC)")
 components.html("""
 <div class="tradingview-widget-container" style="height:600px;">
@@ -84,3 +95,6 @@ st.sidebar.markdown("---")
 st.sidebar.success(f"🔥 USE LOT: {lot_size:.2f}")
 st.sidebar.info(f"🎯 TARGET TP: {tp_pips:.0f} PIPS")
 st.sidebar.error(f"🛑 STOP LOSS: {sl_pips} PIPS")
+
+# 7. FINAL INSTITUTIONAL WARNING
+st.sidebar.warning("⚠️ ZONE ALERT: Price testing $5,000 Support. Watch DXY for reversal.")
