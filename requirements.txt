@@ -4,3 +4,6 @@ pandas
 plotly
 streamlit-autorefresh
 pandas-ta
+tradingview-ta
+requests
+pytz
