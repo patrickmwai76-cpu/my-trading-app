@@ -6,54 +6,51 @@ from tradingview_ta import TA_Handler, Interval
 from streamlit_autorefresh import st_autorefresh
 import streamlit.components.v1 as components
 
-# 1. PAGE SETUP
-st.set_page_config(page_title="PATRO AI PRO V12.6.9", layout="wide")
+# 1. THEME & HEADER
+st.set_page_config(page_title="PATRO AI PRO V12.7.0", layout="wide")
 st.markdown("<style>.stApp { background: #000; color: #fff; }</style>", unsafe_allow_html=True)
 
-# 2. REFRESH
-st_autorefresh(interval=60000, key="patro_pulse")
+# 2. AUTO-REFRESH (Keep signals live)
+st_autorefresh(interval=60000, key="global_sync")
 
-# 3. LIVE TICKER
+# 3. LIVE PRICE TICKER
 components.html("""
 <div class="tradingview-widget-container">
   <script type="text/javascript" src="https://s3.tradingview.com/external-embedding/embed-widget-ticker-nfp.js" async>
   { "symbols": [
     {"proName": "OANDA:XAUUSD", "title": "GOLD"},
-    {"proName": "TVC:DXY", "title": "DXY"}
+    {"proName": "TVC:DXY", "title": "DXY"},
+    {"proName": "FX_IDC:GBPUSD", "title": "GBP/USD"}
   ], "colorTheme": "dark", "isTransparent": true }
   </script>
 </div>""", height=50)
 
-# 4. AI SIGNAL ENGINE (Calculates the "NOW" logic)
-def get_analysis():
+# 4. SMC AI ENGINE (Sidebar Signal)
+def get_smc_signal():
     try:
         handler = TA_Handler(symbol="XAUUSD", screener="forex", exchange="OANDA", interval=Interval.INTERVAL_15_MINUTES)
-        analysis = handler.get_analysis().summary['RECOMMENDATION']
-        
-        # If the 15m is Strong, we trigger the "NOW" signal
-        if "STRONG_BUY" in analysis: return "🚀 BUY NOW", "#00FF88", 9.5
-        elif "STRONG_SELL" in analysis: return "📉 SELL NOW", "#FF4B4B", 1.5
-        elif "BUY" in analysis: return "🔥 BULLISH", "#00FF88", 7.0
-        elif "SELL" in analysis: return "🧊 BEARISH", "#FF4B4B", 3.0
-        else: return "⚖️ NEUTRAL", "#FFA500", 5.0
-    except: return "SYNCING", "#888", 5.0
+        rec = handler.get_analysis().summary['RECOMMENDATION']
+        if "STRONG_BUY" in rec: return "🚀 BUY NOW", "#00FF88"
+        if "STRONG_SELL" in rec: return "📉 SELL NOW", "#FF4B4B"
+        return "⚖️ WAIT / SMC SETUP", "#FFA500"
+    except: return "📡 SYNCING", "#888"
 
-action, color, score = get_analysis()
+action, m_color = get_smc_signal()
 
-# 5. SIDEBAR HUD
+# 5. SIDEBAR: THE COMMAND CENTER
 st.sidebar.markdown(f"""
-<div style="text-align:center; padding:20px; border: 3px solid {color}; border-radius:15px; background: rgba(0,0,0,0.5);">
-    <h1 style="color:{color}; margin:0; font-size:35px;">{action}</h1>
-    <p style="color:#888; margin:0;">STRENGTH: {score}/10</p>
+<div style="text-align:center; padding:20px; border: 3px solid {m_color}; border-radius:15px; background: rgba(0,0,0,0.4); box-shadow: 0px 0px 15px {m_color}33;">
+    <h3 style="margin:0; color:#888;">PATRO AI SIGNAL</h3>
+    <h1 style="color:{m_color}; margin:10px 0; font-size:38px;">{action}</h1>
+    <hr style="border:0.5px solid #333;">
+    <p style="font-size:12px;">SMC 15M ALIGNMENT ACTIVE</p>
 </div>
 """, unsafe_allow_html=True)
 
-# 6. THE CHART (With Built-in Buy/Sell Indicators)
-st.subheader("📊 PATRO SMC MASTER CHART")
-
-# This script now includes "Pivot Points High Low" which creates the S/R labels on chart
+# 6. THE CHART (WITH BUY/SELL LABELS & POP-UP)
+st.subheader("📊 XAUUSD SMC MASTER TERMINAL")
 components.html(f"""
-<div id="tv_chart_container" style="height:700px;"></div>
+<div id="tradingview_smc" style="height:750px;"></div>
 <script type="text/javascript" src="https://s3.tradingview.com/tv.js"></script>
 <script type="text/javascript">
 new TradingView.widget({{
@@ -62,26 +59,42 @@ new TradingView.widget({{
   "interval": "15",
   "theme": "dark",
   "style": "1",
-  "container_id": "tv_chart_container",
+  "container_id": "tradingview_smc",
   "show_popup_button": true,
-  "allow_symbol_change": true,
+  "popup_width": "1000",
+  "popup_height": "650",
   "withdateranges": true,
+  "allow_symbol_change": true,
   "details": true,
-  # These specific studies force Buy/Sell/Pivot labels to appear on the candles
+  "hotlist": true,
+  "calendar": true,
+  # ADDED SMC INDICATORS THAT DRAW LABELS ON CHART:
   "studies": [
-    "STD;Pivot_Points_High_Low", 
-    "STD;Bollinger_Bands%B",
-    "STD;Fair_Value_Gap",
-    "STD;Order_Block"
-  ],
-  "disabled_features": ["use_localstorage_for_settings_active_page"]
+    "STD;Pivot_Points_High_Low", # Displays H/L labels for Buy/Sell zones
+    "STD;Fair_Value_Gap",        # Shows SMC "Gaps"
+    "STD;Order_Block",           # Shows Institutional Entry Blocks
+    "STD;VWAP"                   # Volume Weighted Price
+  ]
 }});
 </script>
-""", height=720)
+""", height=760)
 
-# 7. GAUGES & RISK
+# 7. MARKET DEPTH GAUGES (Back in position)
+st.markdown("---")
+col1, col2 = st.columns(2)
+with col1:
+    st.markdown("#### 🪙 GOLD 1H ANALYSIS")
+    components.html("""<iframe src="https://s3.tradingview.com/external-embedding/embed-widget-technical-analysis.js?{"interval":"1h","width":"100%","height":"350","isTransparent":true,"symbol":"OANDA:XAUUSD","showIntervalTabs":true,"displayMode":"single","colorTheme":"dark"}" height="360" width="100%" style="border:none;"></iframe>""", height=360)
+with col2:
+    st.markdown("#### 💵 DXY 1H ANALYSIS")
+    components.html("""<iframe src="https://s3.tradingview.com/external-embedding/embed-widget-technical-analysis.js?{"interval":"1h","width":"100%","height":"350","isTransparent":true,"symbol":"TVC:DXY","showIntervalTabs":true,"displayMode":"single","colorTheme":"dark"}" height="360" width="100%" style="border:none;"></iframe>""", height=360)
+
+# 8. RISK CALCULATOR (Sidebar Bottom)
 st.sidebar.markdown("---")
-st.sidebar.subheader("🛡️ RISK CALCULATOR")
-bal = st.sidebar.number_input("Balance", value=1000)
-sl = st.sidebar.number_input("SL Pips", value=30)
-st.sidebar.info(f"REC LOT: {round((bal*0.01)/(sl*10), 2)}")
+with st.sidebar:
+    st.subheader("🛡️ RISK MGMT")
+    bal = st.number_input("Account ($)", value=2000)
+    risk_pct = st.slider("Risk (%)", 0.5, 3.0, 1.0)
+    sl_pips = st.number_input("SL (Pips)", value=30)
+    lots = round((bal * (risk_pct/100)) / (sl_pips * 10), 2)
+    st.success(f"🔥 RECOMMENDED LOT: {lots}")
