@@ -8,122 +8,92 @@ from streamlit_autorefresh import st_autorefresh
 import streamlit.components.v1 as components
 
 # 1. PAGE SETUP
-st.set_page_config(page_title="PATRO AI PRO V12.3.0", layout="wide")
+st.set_page_config(page_title="PATRO AI PRO V12.4.1", layout="wide")
 st.markdown("<style>.stApp { background: #000; color: #fff; }</style>", unsafe_allow_html=True)
 
-# 2. AUTO-SYNC (Updates everything every 5 minutes)
-st_autorefresh(interval=300000, key="global_sync")
+# 2. AUTO-SYNC (Refresh every 2 minutes)
+st_autorefresh(interval=120000, key="data_sync")
 
-# 3. ALL-TIMEFRAME RATING ENGINE (1m to 1M)
-def get_all_tf_analysis():
-    # Full spectrum of timeframes
-    tfs = {
-        "1m": Interval.INTERVAL_1_MINUTE,
-        "5m": Interval.INTERVAL_5_MINUTES,
-        "15m": Interval.INTERVAL_15_MINUTES,
-        "1h": Interval.INTERVAL_1_HOUR,
-        "4h": Interval.INTERVAL_4_HOURS,
-        "1D": Interval.INTERVAL_1_DAY,
-        "1W": Interval.INTERVAL_1_WEEK,
-        "1M": Interval.INTERVAL_1_MONTH
-    }
-    results = {}
-    total_buys, total_sells = 0, 0
-    
-    try:
-        for label, tf in tfs.items():
-            handler = TA_Handler(symbol="XAUUSD", screener="forex", exchange="OANDA", interval=tf)
-            analysis = handler.get_analysis()
-            b, s = analysis.summary['BUY'], analysis.summary['SELL']
-            # Calculate individual TF score (1-10)
-            tf_score = round((b/(b+s))*10 if (b+s)>0 else 5, 1)
-            results[label] = {"score": tf_score, "bias": analysis.summary['RECOMMENDATION']}
-            total_buys += b
-            total_sells += s
-            
-        global_score = round((total_buys/(total_buys+total_sells))*10 if (total_buys+total_sells)>0 else 5, 1)
-        return results, global_score
-    except:
-        return {}, 9.4
-
-# Fetch current market state
-all_tf_data, global_rating = get_all_tf_analysis()
-rating_color = "#00FF88" if global_rating > 5 else "#FF4B4B"
-
-# 4. SIDEBAR: THE COMMAND CENTER
-st.sidebar.button("🔄 REFRESH ALL INTERVALS", on_click=st.rerun, use_container_width=True)
-
-# Global Performance Card
-st.sidebar.markdown(f"""
-<div style="background: rgba(255,255,255,0.05); padding: 15px; border-radius: 10px; border: 1px solid {rating_color}; margin-bottom: 20px;">
-    <p style="margin:0; color: #888; font-size: 12px;">GLOBAL MARKET STRENGTH</p>
-    <h2 style="margin:0; color: {rating_color}; text-align:center;">{global_rating} / 10</h2>
-</div>
-""", unsafe_allow_html=True)
-
-# THE FULL SPECTRUM LIST
-st.sidebar.subheader("📊 ALL-INTERVAL SCAN")
-for tf_label, data in all_tf_data.items():
-    # Dynamic coloring for each row
-    c = "#00FF88" if "BUY" in data['bias'] else "#FF4B4B" if "SELL" in data['bias'] else "#888"
-    st.sidebar.markdown(f"""
-        <div style="display: flex; justify-content: space-between; font-size: 13px; border-bottom: 1px solid rgba(255,255,255,0.1); padding: 2px 0;">
-            <span><b>{tf_label}</b></span>
-            <span style="color:{c};">{data['score']} ({data['bias']})</span>
-        </div>
-    """, unsafe_allow_html=True)
-
-# 5. RISK CALCULATOR (Still in Sidebar)
-st.sidebar.markdown("---")
-st.sidebar.header("🛡️ POSITION SIZER")
-bal = st.sidebar.number_input("Balance ($)", value=1000)
-risk_pct = st.sidebar.slider("Risk %", 0.5, 3.0, 1.0)
-sl_pips = st.sidebar.number_input("Stop Loss (Pips)", value=30)
-lot_size = (bal * (risk_pct / 100)) / (sl_pips * 10)
-st.sidebar.success(f"🔥 LOT SIZE: {lot_size:.2f}")
-
-# 6. MAIN DASHBOARD: CORRELATION GAUGES
-col_xau, col_dxy = st.columns(2)
-with col_xau:
-    st.markdown("<h4 style='text-align:center;'>GOLD 15M SUMMARY</h4>", unsafe_allow_html=True)
-    components.html('<div class="tradingview-widget-container"><script type="text/javascript" src="https://s3.tradingview.com/external-embedding/embed-widget-technical-analysis.js" async>{ "interval": "15m", "width": "100%", "height": "380", "isTransparent": true, "symbol": "OANDA:XAUUSD", "showIntervalTabs": true, "displayMode": "single", "colorTheme": "dark" }</script></div>', height=390)
-
-with col_dxy:
-    st.markdown("<h4 style='text-align:center;'>DXY 15M SUMMARY</h4>", unsafe_allow_html=True)
-    components.html('<div class="tradingview-widget-container"><script type="text/javascript" src="https://s3.tradingview.com/external-embedding/embed-widget-technical-analysis.js" async>{ "interval": "15m", "width": "100%", "height": "380", "isTransparent": true, "symbol": "TVC:DXY", "showIntervalTabs": true, "displayMode": "single", "colorTheme": "dark" }</script></div>', height=390)
-
-# 7. THE MASTER CHART (Institutional Suite)
-st.subheader("📊 PATRO SMC TERMINAL (XAUUSD)")
+# 3. LIVE TICKER TAPE (Price Flow on Home)
 components.html("""
-<div class="tradingview-widget-container" style="height:750px;">
-  <div id="tv_full_suite"></div>
+<div class="tradingview-widget-container">
+  <script type="text/javascript" src="https://s3.tradingview.com/external-embedding/embed-widget-ticker-nfp.js" async>
+  { "symbols": [{"proName": "OANDA:XAUUSD", "title": "GOLD"},{"proName": "TVC:DXY", "title": "DXY"}], "colorTheme": "dark", "isTransparent": true }
+  </script>
+</div>""", height=50)
+
+# 4. RESTORED NEWS COUNTDOWN
+def get_news_countdown():
+    try:
+        r = requests.get("https://nfs.faireconomy.media/ff_calendar_thisweek.json")
+        now = datetime.now(pytz.utc)
+        upcoming = [n for n in r.json() if n['impact'] == 'High' and n['country'] == 'USD']
+        for n in upcoming:
+            ev_time = datetime.strptime(n['date'], "%Y-%m-%dT%H:%M:%S%z")
+            if ev_time > now:
+                diff = ev_time - now
+                h, m = divmod(int(diff.total_seconds()), 3600)
+                mn, _ = divmod(m, 60)
+                return f"⏳ {n['title']} in {h}h {mn}m", "#FFA500"
+        return "✅ NO HIGH IMPACT NEWS", "#00FF88"
+    except: return "📡 NEWS OFFLINE", "#888"
+
+# 5. DYNAMIC RATING & ACTION LOGIC
+def get_deep_rating():
+    tfs = [Interval.INTERVAL_1_MINUTE, Interval.INTERVAL_5_MINUTES, Interval.INTERVAL_15_MINUTES, 
+           Interval.INTERVAL_1_HOUR, Interval.INTERVAL_4_HOURS, Interval.INTERVAL_1_DAY]
+    buys, sells = 0, 0
+    tf_results = {}
+    try:
+        for tf in tfs:
+            h = TA_Handler(symbol="XAUUSD", screener="forex", exchange="OANDA", interval=tf)
+            a = h.get_analysis()
+            buys += a.summary['BUY']; sells += a.summary['SELL']
+            tf_results[tf] = a.summary['RECOMMENDATION']
+        score = round((buys / (buys + sells)) * 10, 1) if (buys + sells) > 0 else 5.0
+        if score > 7.0: act, col = "🔥 LOOK FOR BUY", "#00FF88"
+        elif score < 3.0: act, col = "🧊 LOOK FOR SELL", "#FF4B4B"
+        else: act, col = "⚖️ WAIT / NEUTRAL", "#FFA500"
+        return score, act, col, tf_results
+    except: return 5.0, "REFRESHING...", "#888", {}
+
+score, action, m_col, all_tf = get_deep_rating()
+news_msg, news_col = get_news_countdown()
+
+# 6. TOP HUD (News Countdown)
+st.markdown(f"<div style='text-align:center; padding:10px; border-radius:10px; background:rgba(255,255,255,0.05); border: 1px solid {news_col}; color:{news_col}; font-weight:bold;'>{news_msg}</div>", unsafe_allow_html=True)
+
+# 7. SIDEBAR (Rating + Visual Strength Bar)
+st.sidebar.markdown(f"<h1 style='color:{m_col}; text-align:center; margin:0;'>{score}</h1>", unsafe_allow_html=True)
+st.sidebar.markdown(f"<h3 style='color:{m_col}; text-align:center; margin:0;'>{action}</h3>", unsafe_allow_html=True)
+
+# Custom Progress Bar (Visual Strength)
+st.sidebar.markdown("---")
+st.sidebar.write("📈 **TREND STRENGTH**")
+st.sidebar.progress(score / 10.0) # Visual bar from 0.0 to 1.0
+
+st.sidebar.subheader("⏳ TF SCANNER")
+for tf, rec in all_tf.items():
+    st.sidebar.write(f"**{tf.replace('_',' ')}**: {rec}")
+
+# 8. POSITION SIZER
+st.sidebar.markdown("---")
+bal = st.sidebar.number_input("Balance", value=1000)
+risk = st.sidebar.slider("Risk %", 0.5, 5.0, 1.0)
+sl = st.sidebar.number_input("SL Pips", value=30)
+st.sidebar.info(f"LOT SIZE: {round((bal*(risk/100))/(sl*10), 2)}")
+
+# 9. GAUGES & CHART
+c1, c2 = st.columns(2)
+with c1: components.html('<script src="https://s3.tradingview.com/external-embedding/embed-widget-technical-analysis.js" async>{ "interval": "1m", "width": "100%", "height": "380", "isTransparent": true, "symbol": "OANDA:XAUUSD", "showIntervalTabs": true, "colorTheme": "dark" }</script>', height=390)
+with c2: components.html('<script src="https://s3.tradingview.com/external-embedding/embed-widget-technical-analysis.js" async>{ "interval": "1m", "width": "100%", "height": "380", "isTransparent": true, "symbol": "TVC:DXY", "showIntervalTabs": true, "colorTheme": "dark" }</script>', height=390)
+
+st.subheader("📊 PATRO SMC TERMINAL")
+components.html(f"""
+<div style="height:700px;">
+  <div id="tv_chart"></div>
   <script type="text/javascript" src="https://s3.tradingview.com/tv.js"></script>
   <script type="text/javascript">
-  new TradingView.widget({
-    "autosize": true,
-    "symbol": "OANDA:XAUUSD",
-    "interval": "15",
-    "timezone": "Etc/UTC",
-    "theme": "dark",
-    "style": "1",
-    "locale": "en",
-    "toolbar_bg": "#f1f3f6",
-    "enable_publishing": false,
-    "withdateranges": true,
-    "hide_side_toolbar": false,
-    "allow_symbol_change": true,
-    "show_popup_button": true,      // POPUP RESTORED
-    "popup_width": "1000",
-    "popup_height": "650",
-    "container_id": "tv_full_suite",
-    "studies": [
-      "STD;Fair_Value_Gap",         // FVG
-      "STD;Order_Block",            // Order Blocks
-      "STD;Pivot_Points_High_Low",  // Pivot High/Low
-      "STD;VWAP"                    // VWAP
-    ],
-    "show_interval_tabs": true      // Allow you to switch timeframes on chart
-  });
+  new TradingView.widget({{"autosize": true, "symbol": "OANDA:XAUUSD", "interval": "1", "theme": "dark", "style": "1", "container_id": "tv_chart", "show_popup_button": true, "studies": ["STD;Fair_Value_Gap", "STD;Order_Block", "STD;Pivot_Points_High_Low", "STD;VWAP"]}});
   </script>
-</div>
-""", height=760)
+</div>""", height=710)
