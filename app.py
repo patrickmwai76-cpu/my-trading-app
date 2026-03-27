@@ -6,80 +6,102 @@ from tradingview_ta import TA_Handler, Interval
 from streamlit_autorefresh import st_autorefresh
 import streamlit.components.v1 as components
 
-# 1. PAGE SETUP (The Full Dashboard)
-st.set_page_config(page_title="PATRO AI PRO V12.7.1", layout="wide")
+# 1. THEME & HEADER
+st.set_page_config(page_title="PATRO AI PRO V12.7.5", layout="wide")
 st.markdown("<style>.stApp { background: #000; color: #fff; }</style>", unsafe_allow_html=True)
 
-# 2. THE TICKER (Still here)
-components.html("""
-<div class="tradingview-widget-container">
-  <script type="text/javascript" src="https://s3.tradingview.com/external-embedding/embed-widget-ticker-nfp.js" async>
-  { "symbols": [
-    {"proName": "OANDA:XAUUSD", "title": "GOLD"},
-    {"proName": "TVC:DXY", "title": "DXY"}
-  ], "colorTheme": "dark", "isTransparent": true }
-  </script>
-</div>""", height=50)
+# 2. AUTO-REFRESH (Keep everything live)
+st_autorefresh(interval=60000, key="global_sync_v12")
 
-# 3. AI SIGNAL COMMAND (Sidebar - restored with full logic)
-def get_patro_bias():
+# 3. FUTURE FEATURE: HIGH-IMPACT NEWS COUNTDOWN
+def get_news():
     try:
-        handler = TA_Handler(symbol="XAUUSD", screener="forex", exchange="OANDA", interval=Interval.INTERVAL_15_MINUTES)
-        rec = handler.get_analysis().summary['RECOMMENDATION']
-        if "BUY" in rec: return "🚀 BUY NOW", "#00FF88"
-        if "SELL" in rec: return "📉 SELL NOW", "#FF4B4B"
-        return "⚖️ WAIT", "#FFA500"
-    except: return "SYNC", "#888"
+        r = requests.get("https://nfs.faireconomy.media/ff_calendar_thisweek.json")
+        now = datetime.now(pytz.utc)
+        upcoming = [n for n in r.json() if n['impact'] == 'High' and n['country'] == 'USD']
+        for n in upcoming:
+            ev_time = datetime.strptime(n['date'], "%Y-%m-%dT%H:%M:%S%z")
+            if ev_time > now:
+                diff = ev_time - now
+                h, m = divmod(int(diff.total_seconds()), 3600)
+                mn, _ = divmod(m, 60)
+                return f"⚠️ {n['title']} in {h}h {mn}m", "#FF4B4B"
+        return "✅ NO PENDING USD NEWS", "#00FF88"
+    except: return "📡 NEWS FEED SYNCING", "#888"
 
-signal, sig_color = get_patro_bias()
+news_txt, news_col = get_news()
 
-st.sidebar.markdown(f"""
-<div style="text-align:center; padding:20px; border: 4px solid {sig_color}; border-radius:15px; background: rgba(0,0,0,0.5);">
-    <h1 style="color:{sig_color}; margin:0; font-size:40px;">{signal}</h1>
-    <p style="color:#888;">PATRO AI V12.7.1</p>
-</div>
-""", unsafe_allow_html=True)
+# 4. FUTURE FEATURE: MULTI-TIMEFRAME MOMENTUM SCORE
+def get_deep_analysis():
+    tfs = {"1m": Interval.INTERVAL_1_MINUTE, "15m": Interval.INTERVAL_15_MINUTES, "1h": Interval.INTERVAL_1_HOUR, "4h": Interval.INTERVAL_4_HOURS}
+    points = 0
+    results = {}
+    try:
+        for lab, tf in tfs.items():
+            handler = TA_Handler(symbol="XAUUSD", screener="forex", exchange="OANDA", interval=tf)
+            res = handler.get_analysis().summary['RECOMMENDATION']
+            results[lab] = res
+            if "STRONG_BUY" in res: points += 2.5
+            elif "BUY" in res: points += 1.5
+            elif "STRONG_SELL" in res: points -= 2.5
+            elif "SELL" in res: points -= 1.5
+        
+        final_score = round(5 + points, 1)
+        final_score = max(0, min(10, final_score)) # Keep between 0-10
+        
+        # SMC Alignment Logic
+        if "BUY" in results["15m"] and "BUY" in results["1h"]: action, color = "🚀 BUY NOW", "#00FF88"
+        elif "SELL" in results["15m"] and "SELL" in results["1h"]: action, color = "📉 SELL NOW", "#FF4B4B"
+        else: action, color = "⚖️ NEUTRAL", "#FFA500"
+        
+        return final_score, action, color
+    except: return 5.0, "SYNCING", "#888"
 
-# 4. THE CHART (RE-ADDED ALL FEATURES: SMC, POPUP, BUY/SELL LABELS)
-st.subheader("📊 XAUUSD SMC TERMINAL (POP-UP ENABLED)")
+score, action, m_color = get_deep_analysis()
 
+# --- UI LAYOUT ---
+
+# Top Banner (News)
+st.markdown(f"""<div style="text-align:center; padding:10px; border-radius:10px; border:2px solid {news_col}; background:rgba(0,0,0,0.5);"><h3 style="margin:0; color:{news_col};">{news_txt}</h3></div>""", unsafe_allow_html=True)
+
+# Sidebar (Signal + Score + Risk)
+with st.sidebar:
+    st.markdown(f"""<div style="text-align:center; padding:20px; border:3px solid {m_color}; border-radius:15px; background:rgba(0,0,0,0.4); box-shadow: 0px 0px 15px {m_color}44;">
+        <h2 style="margin:0; color:{m_color};">{action}</h2>
+        <h1 style="margin:0; font-size:50px; color:{m_color};">{score}</h1>
+        <p style="color:#888;">AI CONFIDENCE SCORE</p>
+    </div>""", unsafe_allow_html=True)
+    
+    st.markdown("---")
+    st.subheader("🛡️ POSITION SIZER")
+    bal = st.number_input("Balance ($)", value=1000)
+    risk = st.slider("Risk %", 0.5, 3.0, 1.0)
+    sl = st.number_input("Stop Loss (Pips)", value=25)
+    st.success(f"🔥 REC LOT: {round((bal*(risk/100))/(sl*10), 2)}")
+
+# 5. THE CHART (WITH BUY/SELL + POP-UP + SMC)
+st.subheader("📊 PATRO SMC MASTER TERMINAL")
 components.html(f"""
-<div id="tradingview_master" style="height:750px;"></div>
+<div id="tradingview_full" style="height:750px;"></div>
 <script type="text/javascript" src="https://s3.tradingview.com/tv.js"></script>
 <script type="text/javascript">
 new TradingView.widget({{
-  "autosize": true,
-  "symbol": "OANDA:XAUUSD",
-  "interval": "15",
-  "theme": "dark",
-  "style": "1",
-  "container_id": "tradingview_master",
-  "show_popup_button": true,  # POP VIEW RESTORED
-  "withdateranges": true,
-  "allow_symbol_change": true,
-  "details": true,
+  "autosize": true, "symbol": "OANDA:XAUUSD", "interval": "15", "theme": "dark", "style": "1",
+  "container_id": "tradingview_full",
+  "show_popup_button": true,  # POP VIEW IS BACK
+  "withdateranges": true, "allow_symbol_change": true, "details": true, "hotlist": true, "calendar": true,
   "studies": [
-    "STD;Pivot_Points_High_Low", # DRAWS "H" AND "L" LABELS
+    "STD;Pivot_Points_High_Low", # DRAWS BUY/SELL PIVOT LABELS
     "STD;Fair_Value_Gap",        # SMC GAPS
     "STD;Order_Block",           # SMC BLOCKS
-    "STD;Bollinger_Bands%B"     # ADDS EXTRA BUY/SELL MOMENTUM LABELS
+    "STD;VWAP"                   # INSTITUTIONAL PRICE
   ]
 }});
-</script>
-""", height=760)
+</script>""", height=760)
 
-# 5. THE GAUGES (Still here at the bottom)
-st.markdown("---")
+# 6. GAUGES (Bottom)
 col1, col2 = st.columns(2)
 with col1:
-    st.markdown("#### GOLD SUMMARY")
-    components.html("""<iframe src="https://s3.tradingview.com/external-embedding/embed-widget-technical-analysis.js?{"interval":"15m","width":"100%","height":"350","isTransparent":true,"symbol":"OANDA:XAUUSD","showIntervalTabs":true,"displayMode":"single","colorTheme":"dark"} " height="360" width="100%" style="border:none;"></iframe>""", height=360)
+    components.html("""<iframe src="https://s3.tradingview.com/external-embedding/embed-widget-technical-analysis.js?{"interval":"15m","width":"100%","height":"350","isTransparent":true,"symbol":"OANDA:XAUUSD","showIntervalTabs":true,"displayMode":"single","colorTheme":"dark"}" height="360" width="100%" style="border:none;"></iframe>""", height=360)
 with col2:
-    st.markdown("#### DXY SUMMARY")
-    components.html("""<iframe src="https://s3.tradingview.com/external-embedding/embed-widget-technical-analysis.js?{"interval":"15m","width":"100%","height":"350","isTransparent":true,"symbol":"TVC:DXY","showIntervalTabs":true,"displayMode":"single","colorTheme":"dark"} " height="360" width="100%" style="border:none;"></iframe>""", height=360)
-
-# 6. RISK MGMT (Sidebar bottom)
-st.sidebar.markdown("---")
-bal = st.sidebar.number_input("Account Balance", value=1000)
-sl_pips = st.sidebar.number_input("Stop Loss (Pips)", value=25)
-st.sidebar.success(f"🔥 RECOMMENDED LOT: {round((bal*0.01)/(sl_pips*10), 2)}")
+    components.html("""<iframe src="https://s3.tradingview.com/external-embedding/embed-widget-technical-analysis.js?{"interval":"15m","width":"100%","height":"350","isTransparent":true,"symbol":"TVC:DXY","showIntervalTabs":true,"displayMode":"single","colorTheme":"dark"}" height="360" width="100%" style="border:none;"></iframe>""", height=360)
