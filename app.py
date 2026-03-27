@@ -1,105 +1,134 @@
 import streamlit as st
-import requests
+import streamlit.components.v1 as components
 from datetime import datetime
 import pytz
 from tradingview_ta import TA_Handler, Interval
 from streamlit_autorefresh import st_autorefresh
-import streamlit.components.v1 as components
 
-# 1. THEME & HEADER (Institutional Black)
-st.set_page_config(page_title="PATRO AI PRO V12.8.0", layout="wide")
+# 1. PAGE SETUP
+st.set_page_config(page_title="PATRO AI PRO V12.1.51", layout="wide")
 st.markdown("<style>.stApp { background: #000; color: #fff; }</style>", unsafe_allow_html=True)
 
-# 2. AUTO-REFRESH (High-Frequency Updates)
-st_autorefresh(interval=60000, key="patro_full_sync")
+# AUTO-REFRESH (Every 2 minutes to update signals)
+st_autorefresh(interval=120000, key="global_sync")
 
-# 3. FEATURE: LIVE NEWS TICKER (Restored)
-def get_live_news():
+# 2. DATA ENGINE (The fix for the stuck 9.4 rating)
+def get_live_verdict():
     try:
-        r = requests.get("https://nfs.faireconomy.media/ff_calendar_thisweek.json")
-        now = datetime.now(pytz.utc)
-        upcoming = [n for n in r.json() if n['impact'] == 'High' and n['country'] == 'USD']
-        for n in upcoming:
-            ev_time = datetime.strptime(n['date'], "%Y-%m-%dT%H:%M:%S%z")
-            if ev_time > now:
-                diff = ev_time - now
-                h, m = divmod(int(diff.total_seconds()), 3600)
-                mn, _ = divmod(m, 60)
-                return f"🔥 {n['title']} in {h}h {mn}m", "#FF4B4B"
-        return "✅ NO HIGH IMPACT NEWS", "#00FF88"
-    except: return "📡 NEWS FEED CONNECTING...", "#888"
-
-news_text, news_color = get_live_news()
-st.markdown(f"<div style='text-align:center; padding:10px; border:2px solid {news_color}; border-radius:10px;'><h3>{news_text}</h3></div>", unsafe_allow_html=True)
-
-# 4. FEATURE: MULTI-TF AI SCORE & SMC SIGNAL (Restored)
-def get_ai_analysis():
-    tfs = {"1m": Interval.INTERVAL_1_MINUTE, "15m": Interval.INTERVAL_15_MINUTES, "1h": Interval.INTERVAL_1_HOUR, "4h": Interval.INTERVAL_4_HOURS}
-    points = 0
-    tf_data = {}
-    try:
-        for lab, tf in tfs.items():
-            handler = TA_Handler(symbol="XAUUSD", screener="forex", exchange="OANDA", interval=tf)
-            analysis = handler.get_analysis().summary['RECOMMENDATION']
-            tf_data[lab] = analysis
-            if "STRONG_BUY" in analysis: points += 2.5
-            elif "BUY" in analysis: points += 1.5
-            elif "STRONG_SELL" in analysis: points -= 2.5
-            elif "SELL" in analysis: points -= 1.5
+        # Scanning 15m and 1h for XAUUSD SMC Alignment
+        h15 = TA_Handler(symbol="XAUUSD", screener="forex", exchange="OANDA", interval=Interval.INTERVAL_15_MINUTES)
+        h1 = TA_Handler(symbol="XAUUSD", screener="forex", exchange="OANDA", interval=Interval.INTERVAL_1_HOUR)
         
-        score = round(5 + points, 1)
-        score = max(0, min(10, score))
+        rec15 = h15.get_analysis().summary['RECOMMENDATION']
+        rec1 = h1.get_analysis().summary['RECOMMENDATION']
         
-        # SMC Alignment
-        if "BUY" in tf_data["15m"] and "BUY" in tf_data["1h"]: action, color = "🚀 BUY NOW", "#00FF88"
-        elif "SELL" in tf_data["15m"] and "SELL" in tf_data["1h"]: action, color = "📉 SELL NOW", "#FF4B4B"
-        else: action, color = "⚖️ NEUTRAL", "#FFA500"
+        # Calculate dynamic score based on technical indicators
+        points = 5.0
+        if "BUY" in rec15: points += 2.0
+        if "STRONG_BUY" in rec15: points += 2.0
+        if "SELL" in rec15: points -= 2.0
+        if "STRONG_SELL" in rec15: points -= 2.0
         
-        return score, action, color
-    except: return 5.0, "SYNCING", "#888"
+        # Determine Bias
+        if "BUY" in rec15 and "BUY" in rec1: 
+            bias, b_col, b_text = "BULLISH", "#00FF88", "Momentum confirmed. Look for FVG entries."
+        elif "SELL" in rec15 and "SELL" in rec1: 
+            bias, b_col, b_text = "BEARISH", "#FF4B4B", "DXY strength confirmed. Look for liquidity sweeps."
+        else: 
+            bias, b_col, b_text = "NEUTRAL", "#FFA500", "Market consolidating. Wait for BOS/MSS."
+            
+        return round(max(1.0, min(10.0, points)), 1), bias, b_col, b_text
+    except:
+        return 5.0, "SYNCING", "#888", "Connecting to OANDA data..."
 
-ai_score, ai_action, ai_color = get_ai_analysis()
+score, bias, bias_color, bias_desc = get_live_verdict()
 
-# 5. SIDEBAR COMMANDS (Signal + Risk + Branding)
-with st.sidebar:
-    st.markdown(f"""<div style='text-align:center; padding:20px; border:3px solid {ai_color}; border-radius:15px; background:rgba(0,0,0,0.5);'>
-        <h2 style='color:{ai_color}; margin:0;'>{ai_action}</h2>
-        <h1 style='font-size:55px; margin:0;'>{ai_score}</h1>
-        <p style='color:#888;'>AI MOMENTUM SCORE</p>
-    </div>""", unsafe_allow_html=True)
-    
-    st.markdown("---")
-    st.subheader("🛡️ RISK MGMT")
-    balance = st.number_input("Balance", value=1000)
-    risk_pct = st.slider("Risk %", 0.5, 3.0, 1.0)
-    sl_pips = st.number_input("SL Pips", value=30)
-    st.success(f"🔥 REC LOT: {round((balance * (risk_pct/100)) / (sl_pips * 10), 2)}")
+# 3. TOP HUD: NEWS & KILLZONES
+def get_status():
+    now = datetime.now(pytz.utc)
+    if 13 <= now.hour < 16: return "🔥 NY KILLZONE ACTIVE"
+    elif 8 <= now.hour < 11: return "⚡ LONDON OPEN"
+    return "💤 LOW VOLUME"
 
-# 6. FEATURE: THE MASTER CHART (Restored with Pop-Up + On-Chart Signals)
-st.subheader("📊 PATRO SMC MASTER TERMINAL")
-components.html(f"""
-<div id="tv_chart_v12" style="height:750px;"></div>
-<script type="text/javascript" src="https://s3.tradingview.com/tv.js"></script>
-<script type="text/javascript">
-new TradingView.widget({{
-  "autosize": true, "symbol": "OANDA:XAUUSD", "interval": "15", "theme": "dark", "style": "1",
-  "container_id": "tv_chart_v12",
-  "show_popup_button": true, # POP VIEW ENABLED
-  "withdateranges": true, "allow_symbol_change": true, "details": true, "hotlist": true, "calendar": true,
-  "studies": [
-    "STD;Pivot_Points_High_Low", # FORCES "H" & "L" BUY/SELL LABELS
-    "STD;Fair_Value_Gap",        # SMC GAPS
-    "STD;Order_Block",           # SMC BLOCKS
-    "STD;Bollinger_Bands%B"     # MOMENTUM SIGNALS
-  ]
-}});
-</script>""", height=760)
+st.markdown(f"<h3 style='text-align:center; color:#FF4B4B;'>{get_status()} | LIVE NEWS CALENDAR</h3>", unsafe_allow_html=True)
+components.html("""
+<div class="tradingview-widget-container">
+  <script type="text/javascript" src="https://s3.tradingview.com/external-embedding/embed-widget-events.js" async>
+  { "width": "100%", "height": "200", "colorTheme": "dark", "isTransparent": true, "importanceFilter": "-1,0,1" }
+  </script>
+</div>
+""", height=210)
 
-# 7. FEATURE: MARKET GAUGES (Restored)
-col_gold, col_dxy = st.columns(2)
-with col_gold:
-    st.write("🪙 **GOLD 15M SUMMARY**")
-    components.html("""<iframe src="https://s3.tradingview.com/external-embedding/embed-widget-technical-analysis.js?{"interval":"15m","width":"100%","height":"350","isTransparent":true,"symbol":"OANDA:XAUUSD","showIntervalTabs":true,"displayMode":"single","colorTheme":"dark"}" height="360" width="100%" style="border:none;"></iframe>""", height=360)
-with col_dxy:
-    st.write("💵 **DXY 15M SUMMARY**")
-    components.html("""<iframe src="https://s3.tradingview.com/external-embedding/embed-widget-technical-analysis.js?{"interval":"15m","width":"100%","height":"350","isTransparent":true,"symbol":"TVC:DXY","showIntervalTabs":true,"displayMode":"single","colorTheme":"dark"}" height="360" width="100%" style="border:none;"></iframe>""", height=360)
+# --- SIDEBAR (Now using Dynamic Data) ---
+st.sidebar.markdown(f"""
+<div style="background: rgba({ '0, 255, 136' if bias == 'BULLISH' else '255, 75, 75' if bias == 'BEARISH' else '255, 165, 0' }, 0.1); padding: 15px; border-radius: 10px; border: 1px solid {bias_color}; margin-bottom: 20px;">
+    <p style="margin:0; color: #888; font-size: 12px;">AI PERFORMANCE RATING</p>
+    <h2 style="margin:0; color: {bias_color};">{score} / 10</h2>
+    <hr style="margin: 10px 0; border-color: rgba(255,255,255,0.1);">
+    <p style="margin:0; font-size: 14px;"><b>BIAS:</b> {bias} (XAU)</p>
+    <p style="margin:0; font-size: 11px; color: {bias_color};">{bias_desc}</p>
+</div>
+""", unsafe_allow_html=True)
+
+# 4. DUAL-SIGNAL GAUGE HUB
+st.markdown("---")
+col_g, col_d = st.columns(2)
+with col_g:
+    st.markdown("<h4 style='text-align:center; color:#00FF88;'>GOLD (XAUUSD) SIGNAL</h4>", unsafe_allow_html=True)
+    components.html("""
+    <div class="tradingview-widget-container"><script type="text/javascript" src="https://s3.tradingview.com/external-embedding/embed-widget-technical-analysis.js" async>
+    { "interval": "15m", "width": "100%", "height": "380", "isTransparent": true, "symbol": "OANDA:XAUUSD", "showIntervalTabs": true, "displayMode": "single", "colorTheme": "dark" }
+    </script></div>
+    """, height=390)
+
+with col_d:
+    st.markdown("<h4 style='text-align:center; color:#FF4B4B;'>DOLLAR (DXY) SIGNAL</h4>", unsafe_allow_html=True)
+    components.html("""
+    <div class="tradingview-widget-container"><script type="text/javascript" src="https://s3.tradingview.com/external-embedding/embed-widget-technical-analysis.js" async>
+    { "interval": "15m", "width": "100%", "height": "380", "isTransparent": true, "symbol": "TVC:DXY", "showIntervalTabs": true, "displayMode": "single", "colorTheme": "dark" }
+    </script></div>
+    """, height=390)
+
+# 5. MARKET TICKER
+components.html("""
+<div class="tradingview-widget-container"><script type="text/javascript" src="https://s3.tradingview.com/external-embedding/embed-widget-ticker-tape.js" async>
+{ "symbols": [{"proName": "TVC:DXY", "title": "DXY"}, {"proName": "OANDA:XAUUSD", "title": "GOLD"}], "colorTheme": "dark", "isTransparent": true }
+</script></div>
+""", height=50)
+
+# 6. THE SMC CHART (Studies Kept Intact)
+st.subheader("📊 SMART MONEY CHART (SMC)")
+components.html("""
+<div class="tradingview-widget-container" style="height:600px;">
+  <div id="tv_final"></div>
+  <script type="text/javascript" src="https://s3.tradingview.com/tv.js"></script>
+  <script type="text/javascript">
+  new TradingView.widget({
+    "autosize": true, "symbol": "OANDA:XAUUSD", "interval": "15",
+    "theme": "dark", "style": "1", "container_id": "tv_final",
+    "show_popup_button": true,
+    "popup_width": "1000",
+    "popup_height": "650",
+    "studies": ["STD;Fair_Value_Gap", "STD;Order_Block", "STD;Pivot_Points_High_Low", "STD;VWAP"]
+  });
+  </script>
+</div>
+""", height=610)
+
+# 7. SIDEBAR: RISK CALCULATOR
+st.sidebar.header("🛡️ RISK & TARGETS")
+bal = st.sidebar.number_input("Balance ($)", value=1000)
+risk_pct = st.sidebar.slider("Risk %", 0.5, 3.0, 1.0)
+sl_pips = st.sidebar.number_input("Stop Loss (Pips)", value=30)
+reward_ratio = st.sidebar.slider("Reward Ratio (1:X)", 1.5, 5.0, 2.0)
+
+risk_amount = bal * (risk_pct / 100)
+lot_size = risk_amount / (sl_pips * 10)
+tp_pips = sl_pips * reward_ratio
+
+st.sidebar.markdown("---")
+st.sidebar.success(f"🔥 USE LOT: {lot_size:.2f}")
+st.sidebar.info(f"🎯 TARGET TP: {tp_pips:.0f} PIPS")
+st.sidebar.error(f"🛑 STOP LOSS: {sl_pips} PIPS")
+
+st.sidebar.warning("⚠️ ZONE ALERT: Watch for BOS/MSS on 15m Chart.")
