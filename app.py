@@ -5,130 +5,119 @@ import pytz
 from tradingview_ta import TA_Handler, Interval
 from streamlit_autorefresh import st_autorefresh
 
-# 1. PAGE SETUP
-st.set_page_config(page_title="PATRO AI PRO V12.1.51", layout="wide")
-st.markdown("<style>.stApp { background: #000; color: #fff; }</style>", unsafe_allow_html=True)
+# 1. ADVANCED UI STYLING (The "Glassmorphism" Look)
+st.set_page_config(page_title="PATRO AI PRO", layout="wide")
 
-# AUTO-REFRESH (Every 2 minutes to update signals)
-st_autorefresh(interval=120000, key="global_sync")
+st.markdown("""
+<style>
+    /* Global App Background */
+    .stApp {
+        background: radial-gradient(circle at top right, #1a1a2e, #000000);
+        color: #ffffff;
+    }
+    
+    /* Glassmorphism Cards */
+    div[data-testid="stVerticalBlock"] > div:has(div.tradingview-widget-container) {
+        background: rgba(255, 255, 255, 0.03);
+        backdrop-filter: blur(10px);
+        border-radius: 20px;
+        border: 1px solid rgba(255, 255, 255, 0.1);
+        padding: 15px;
+        box-shadow: 0 8px 32px 0 rgba(0, 0, 0, 0.8);
+    }
 
-# 2. DATA ENGINE (The fix for the stuck 9.4 rating)
+    /* Glowing Sidebar */
+    [data-testid="stSidebar"] {
+        background-color: #0a0a0a !important;
+        border-right: 1px solid #00FF8822;
+    }
+
+    /* Indicator Badge Styling */
+    .indicator-badge {
+        padding: 5px 12px;
+        border-radius: 50px;
+        font-weight: bold;
+        font-size: 12px;
+        text-transform: uppercase;
+        border: 1px solid;
+    }
+</style>
+""", unsafe_allow_html=True)
+
+st_autorefresh(interval=120000, key="patro_ultra_sync")
+
+# 2. DATA ENGINE
 def get_live_verdict():
     try:
-        # Scanning 15m and 1h for XAUUSD SMC Alignment
         h15 = TA_Handler(symbol="XAUUSD", screener="forex", exchange="OANDA", interval=Interval.INTERVAL_15_MINUTES)
-        h1 = TA_Handler(symbol="XAUUSD", screener="forex", exchange="OANDA", interval=Interval.INTERVAL_1_HOUR)
-        
         rec15 = h15.get_analysis().summary['RECOMMENDATION']
-        rec1 = h1.get_analysis().summary['RECOMMENDATION']
         
-        # Calculate dynamic score based on technical indicators
-        points = 5.0
-        if "BUY" in rec15: points += 2.0
-        if "STRONG_BUY" in rec15: points += 2.0
-        if "SELL" in rec15: points -= 2.0
-        if "STRONG_SELL" in rec15: points -= 2.0
-        
-        # Determine Bias
-        if "BUY" in rec15 and "BUY" in rec1: 
-            bias, b_col, b_text = "BULLISH", "#00FF88", "Momentum confirmed. Look for FVG entries."
-        elif "SELL" in rec15 and "SELL" in rec1: 
-            bias, b_col, b_text = "BEARISH", "#FF4B4B", "DXY strength confirmed. Look for liquidity sweeps."
-        else: 
-            bias, b_col, b_text = "NEUTRAL", "#FFA500", "Market consolidating. Wait for BOS/MSS."
-            
-        return round(max(1.0, min(10.0, points)), 1), bias, b_col, b_text
-    except:
-        return 5.0, "SYNCING", "#888", "Connecting to OANDA data..."
+        if "BUY" in rec15: return "🚀 BULLISH", "#00FF88", "STRONG DEMAND AT SUPPORT"
+        elif "SELL" in rec15: return "📉 BEARISH", "#FF4B4B", "LIQUIDITY SWEEP DETECTED"
+        return "⚖️ NEUTRAL", "#FFA500", "WAIT FOR BREAK OF STRUCTURE"
+    except: return "SYNC", "#888", "RECONNECTING..."
 
-score, bias, bias_color, bias_desc = get_live_verdict()
+status, s_col, s_desc = get_live_verdict()
 
-# 3. TOP HUD: NEWS & KILLZONES
-def get_status():
-    now = datetime.now(pytz.utc)
-    if 13 <= now.hour < 16: return "🔥 NY KILLZONE ACTIVE"
-    elif 8 <= now.hour < 11: return "⚡ LONDON OPEN"
-    return "💤 LOW VOLUME"
-
-st.markdown(f"<h3 style='text-align:center; color:#FF4B4B;'>{get_status()} | LIVE NEWS CALENDAR</h3>", unsafe_allow_html=True)
-components.html("""
-<div class="tradingview-widget-container">
-  <script type="text/javascript" src="https://s3.tradingview.com/external-embedding/embed-widget-events.js" async>
-  { "width": "100%", "height": "200", "colorTheme": "dark", "isTransparent": true, "importanceFilter": "-1,0,1" }
-  </script>
-</div>
-""", height=210)
-
-# --- SIDEBAR (Now using Dynamic Data) ---
-st.sidebar.markdown(f"""
-<div style="background: rgba({ '0, 255, 136' if bias == 'BULLISH' else '255, 75, 75' if bias == 'BEARISH' else '255, 165, 0' }, 0.1); padding: 15px; border-radius: 10px; border: 1px solid {bias_color}; margin-bottom: 20px;">
-    <p style="margin:0; color: #888; font-size: 12px;">AI PERFORMANCE RATING</p>
-    <h2 style="margin:0; color: {bias_color};">{score} / 10</h2>
-    <hr style="margin: 10px 0; border-color: rgba(255,255,255,0.1);">
-    <p style="margin:0; font-size: 14px;"><b>BIAS:</b> {bias} (XAU)</p>
-    <p style="margin:0; font-size: 11px; color: {bias_color};">{bias_desc}</p>
+# 3. TOP HUD: NEON STATUS & EVENTS
+now = datetime.now(pytz.utc).strftime('%H:%M')
+st.markdown(f"""
+<div style="display: flex; justify-content: space-between; align-items: center; padding: 10px 20px; background: rgba(0,0,0,0.4); border-radius: 15px; border-left: 5px solid {s_col};">
+    <div>
+        <h4 style="margin:0; color:{s_col};">{status} | {now} UTC</h4>
+        <p style="margin:0; font-size:12px; color:#888;">{s_desc}</p>
+    </div>
+    <div style="text-align:right;">
+        <span class="indicator-badge" style="color:#00FF88; border-color:#00FF88;">XAUUSD LIVE</span>
+    </div>
 </div>
 """, unsafe_allow_html=True)
 
-# 4. DUAL-SIGNAL GAUGE HUB
-st.markdown("---")
-col_g, col_d = st.columns(2)
-with col_g:
-    st.markdown("<h4 style='text-align:center; color:#00FF88;'>GOLD (XAUUSD) SIGNAL</h4>", unsafe_allow_html=True)
-    components.html("""
-    <div class="tradingview-widget-container"><script type="text/javascript" src="https://s3.tradingview.com/external-embedding/embed-widget-technical-analysis.js" async>
-    { "interval": "15m", "width": "100%", "height": "380", "isTransparent": true, "symbol": "OANDA:XAUUSD", "showIntervalTabs": true, "displayMode": "single", "colorTheme": "dark" }
-    </script></div>
-    """, height=390)
+# 4. SIDEBAR: THE AI BRAIN
+st.sidebar.markdown(f"""
+<div style="text-align:center; padding:25px; background: linear-gradient(145deg, #0f0f0f, #1a1a1a); border-radius:20px; border: 1px solid {s_col}44;">
+    <p style="color:#888; font-size:11px; letter-spacing:2px;">INSTITUTIONAL BIAS</p>
+    <h1 style="color:{s_col}; margin:10px 0; font-size:42px;">{status.split()[-1]}</h1>
+    <div style="height:4px; width:60%; background:{s_col}; margin:auto; border-radius:10px; box-shadow: 0 0 15px {s_col};"></div>
+</div>
+""", unsafe_allow_html=True)
 
-with col_d:
-    st.markdown("<h4 style='text-align:center; color:#FF4B4B;'>DOLLAR (DXY) SIGNAL</h4>", unsafe_allow_html=True)
-    components.html("""
-    <div class="tradingview-widget-container"><script type="text/javascript" src="https://s3.tradingview.com/external-embedding/embed-widget-technical-analysis.js" async>
-    { "interval": "15m", "width": "100%", "height": "380", "isTransparent": true, "symbol": "TVC:DXY", "showIntervalTabs": true, "displayMode": "single", "colorTheme": "dark" }
-    </script></div>
-    """, height=390)
-
-# 5. MARKET TICKER
-components.html("""
-<div class="tradingview-widget-container"><script type="text/javascript" src="https://s3.tradingview.com/external-embedding/embed-widget-ticker-tape.js" async>
-{ "symbols": [{"proName": "TVC:DXY", "title": "DXY"}, {"proName": "OANDA:XAUUSD", "title": "GOLD"}], "colorTheme": "dark", "isTransparent": true }
-</script></div>
-""", height=50)
-
-# 6. THE SMC CHART (Studies Kept Intact)
-st.subheader("📊 SMART MONEY CHART (SMC)")
-components.html("""
-<div class="tradingview-widget-container" style="height:600px;">
-  <div id="tv_final"></div>
+# 5. THE ADVANCED SMC CHART
+st.markdown("### 📊 PATRO SMC TERMINAL")
+components.html(f"""
+<div class="tradingview-widget-container" style="height:650px; border-radius:20px; overflow:hidden;">
+  <div id="tv_adv"></div>
   <script type="text/javascript" src="https://s3.tradingview.com/tv.js"></script>
   <script type="text/javascript">
-  new TradingView.widget({
+  new TradingView.widget({{
     "autosize": true, "symbol": "OANDA:XAUUSD", "interval": "15",
-    "theme": "dark", "style": "1", "container_id": "tv_final",
-    "show_popup_button": true,
-    "popup_width": "1000",
-    "popup_height": "650",
-    "studies": ["STD;Fair_Value_Gap", "STD;Order_Block", "STD;Pivot_Points_High_Low", "STD;VWAP"]
-  });
+    "theme": "dark", "style": "1", "container_id": "tv_adv",
+    "enable_publishing": false, "hide_side_toolbar": false,
+    "allow_symbol_change": true, "show_popup_button": true,
+    "popup_width": "1000", "popup_height": "650",
+    "backgroundColor": "rgba(0, 0, 0, 1)",
+    "gridColor": "rgba(255, 255, 255, 0.05)",
+    "studies": [
+        "STD;Fair_Value_Gap", 
+        "STD;Order_Block", 
+        "STD;Pivot_Points_High_Low", # This creates the "H" and "L" labels
+        "STD;VWAP"
+    ]
+  }});
   </script>
 </div>
-""", height=610)
+""", height=660)
 
-# 7. SIDEBAR: RISK CALCULATOR
-st.sidebar.header("🛡️ RISK & TARGETS")
-bal = st.sidebar.number_input("Balance ($)", value=1000)
-risk_pct = st.sidebar.slider("Risk %", 0.5, 3.0, 1.0)
-sl_pips = st.sidebar.number_input("Stop Loss (Pips)", value=30)
-reward_ratio = st.sidebar.slider("Reward Ratio (1:X)", 1.5, 5.0, 2.0)
+# 6. DUAL DASHBOARD GAUGES
+col1, col2 = st.columns(2)
+with col1:
+    components.html("""<iframe src="https://s3.tradingview.com/external-embedding/embed-widget-technical-analysis.js?{"interval":"15m","width":"100%","height":"350","isTransparent":true,"symbol":"OANDA:XAUUSD","showIntervalTabs":true,"displayMode":"single","colorTheme":"dark"}" height="360" width="100%" style="border:none;"></iframe>""", height=360)
+with col2:
+    components.html("""<iframe src="https://s3.tradingview.com/external-embedding/embed-widget-technical-analysis.js?{"interval":"15m","width":"100%","height":"350","isTransparent":true,"symbol":"TVC:DXY","showIntervalTabs":true,"displayMode":"single","colorTheme":"dark"}" height="360" width="100%" style="border:none;"></iframe>""", height=360)
 
-risk_amount = bal * (risk_pct / 100)
-lot_size = risk_amount / (sl_pips * 10)
-tp_pips = sl_pips * reward_ratio
-
+# 7. RISK CALCULATOR (Sidebar Bottom)
 st.sidebar.markdown("---")
-st.sidebar.success(f"🔥 USE LOT: {lot_size:.2f}")
-st.sidebar.info(f"🎯 TARGET TP: {tp_pips:.0f} PIPS")
-st.sidebar.error(f"🛑 STOP LOSS: {sl_pips} PIPS")
-
-st.sidebar.warning("⚠️ ZONE ALERT: Watch for BOS/MSS on 15m Chart.")
+st.sidebar.subheader("🛡️ SMART RISK")
+bal = st.sidebar.number_input("Capital", value=1000)
+sl = st.sidebar.number_input("SL Pips", value=25)
+st.sidebar.success(f"🔥 RECOMMENDED LOT: {round((bal*0.01)/(sl*10), 2)}")
