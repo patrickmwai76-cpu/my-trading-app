@@ -10,7 +10,6 @@ st.set_page_config(
     initial_sidebar_state="expanded"
 )
 
-# Custom CSS for UI Overrides
 st.markdown("""
     <style>
     .stApp { background-color: #050505; color: #ffffff; }
@@ -22,13 +21,22 @@ st.markdown("""
     </style>
     """, unsafe_allow_html=True)
 
-# --- 2. THE POP-VIEW (DIALOG) FUNCTION ---
+# --- 2. TREND LOGIC & GLOBAL VARIABLES (DEFINED FIRST) ---
+m15_t, h1_t, h4_t = "BULLISH", "BULLISH", "BULLISH"
+is_god_mode = (m15_t == h1_t == h4_t == "BULLISH")
+
+# Fixed the NameError by defining these before the UI starts
+trend_status = "GOD MODE: STRONG BULLISH" if is_god_mode else "SCANNING ALIGNMENT..."
+trend_color = "#00FF88" if is_god_mode else "#FFAA00"
+utc_now = datetime.now(pytz.utc).strftime("%H:%M:%S UTC")
+
+# --- 3. THE POP-VIEW (DIALOG) FUNCTION ---
 @st.dialog("🎯 PATRO AI | EXECUTION SIGNAL", width="medium")
 def show_signal_popup():
     st.markdown("""
     <div style="text-align: center; border-bottom: 1px solid #333; padding-bottom: 10px; margin-bottom: 15px;">
         <h1 style="color: #00FF88; margin: 0;">BUY XAUUSD</h1>
-        <p style="color: #888;">Precision Entry Found | GOD MODE</p>
+        <p style="color: #888;">Precision Entry | VWAP & PIVOT ALIGNED</p>
     </div>
     """, unsafe_allow_html=True)
     
@@ -41,25 +49,17 @@ def show_signal_popup():
         st.metric("RR RATIO", "1:2.45")
     
     st.markdown("---")
-    st.info("💡 **Logic:** Price rejected M15 Pivot Low + VWAP Support. FVG Tapped.")
-    
     if st.button("CONFIRM EXECUTION"):
         st.toast("Sending order to MetaTrader 5...", icon="🚀")
         st.rerun()
 
-# --- 3. TREND LOGIC & DYNAMIC HUD ---
-# Logic to determine "GOD MODE" (All timeframes align)
-m15_t, h1_t, h4_t = "BULLISH", "BULLISH", "BULLISH"
-is_god_mode = (m15_t == h1_t == h4_t == "BULLISH")
-trend_color = "#00FF88" if is_god_mode else "#FFAA00"
-utc_now = datetime.now(pytz.utc).strftime("%H:%M:%S UTC")
-
+# --- 4. HEADER & DYNAMIC HUD ---
 st.markdown(f"""
 <div style="background: linear-gradient(90deg, #050505, #111); padding:20px; border-radius:15px; border-left: 6px solid {trend_color}; margin-bottom:20px; border: 1px solid #222;">
     <div style="display: flex; justify-content: space-between; align-items: center;">
         <div>
             <h2 style="margin:0; color:#00FF88; font-family: monospace;">PATRO AI PRO <span style="font-size:12px; color:#888;">ULTRA V14.0</span></h2>
-            <p style="margin:0; color:{trend_color}; font-weight:bold;">{"GOD MODE: STRONG BULLISH" if is_god_mode else "SCANNING ALIGNMENT..."}</p>
+            <p style="margin:0; color:{trend_color}; font-weight:bold;">{trend_status}</p>
         </div>
         <div style="text-align: right;">
             <p style="margin:0; color:#00FF88; font-family: monospace; font-size: 20px;">{utc_now}</p>
@@ -73,7 +73,7 @@ st.markdown(f"""
 </div>
 """, unsafe_allow_html=True)
 
-# --- 4. THE MAIN TERMINAL (3-COLUMN LAYOUT) ---
+# --- 5. MAIN TERMINAL ---
 col_left, col_mid, col_right = st.columns([1.2, 3, 1.2])
 
 with col_left:
@@ -85,24 +85,21 @@ with col_left:
         st.checkbox("M15 MSS Confirmed", value=True)
     
     st.markdown("---")
-    st.markdown("### 🛡️ NEWS KILL-SWITCH")
-    st.warning("🔴 **CPI DATA IN 2H 15M**")
-    st.caption("AI Suggestion: Close all positions 30m before impact.")
+    st.markdown("### ⚡ QUICK SIGNAL")
+    if st.button("🚀 GENERATE SIGNAL"):
+        show_signal_popup()
 
 with col_mid:
-    st.subheader("📊 XAUUSD LIVE SMC ENGINE")
-    # TV Widget with VWAP and Pivot Points
     components.html("""
-    <div id="tv_main" style="height:600px;"></div>
+    <div id="tv_main" style="height:550px;"></div>
     <script src="https://s3.tradingview.com/tv.js"></script>
     <script>
     new TradingView.widget({
       "autosize": true, "symbol": "OANDA:XAUUSD", "interval": "15", "theme": "dark",
-      "style": "1", "container_id": "tv_main", "hide_side_toolbar": false,
-      "studies": ["PivotPointsHighLow@tv-basicstudies", "VWAP@tv-basicstudies", "OrderBlock@tv-basicstudies"],
-      "overrides": { "paneProperties.background": "#000000" }
+      "style": "1", "container_id": "tv_main",
+      "studies": ["PivotPointsHighLow@tv-basicstudies", "VWAP@tv-basicstudies", "OrderBlock@tv-basicstudies"]
     });
-    </script>""", height=610)
+    </script>""", height=560)
 
 with col_right:
     st.markdown("### 🧠 AI SENTIMENT")
@@ -111,43 +108,36 @@ with col_right:
     { "interval": "1h", "width": "100%", "height": "350", "isTransparent": true, "symbol": "OANDA:XAUUSD", "colorTheme": "dark" }
     </script>""", height=360)
     
-    st.markdown("### 🕒 SESSION CLOCKS")
     st.metric("LONDON", datetime.now(pytz.timezone('Europe/London')).strftime("%H:%M"))
     st.metric("NEW YORK", datetime.now(pytz.timezone('America/New_York')).strftime("%H:%M"))
 
-# --- 5. INSTITUTIONAL PLANNING & RISK ---
-st.markdown("---")
-plan_col1, plan_col2 = st.columns([2, 1])
-
-with plan_col1:
-    st.markdown("### 📐 INSTITUTIONAL TRADE PLAN")
-    st.table({
-        "Level Type": ["PDH", "PDL", "Daily Pivot", "VWAP Zone"],
-        "Price Zone": ["$2,745.50", "$2,710.20", "$2,725.00", "$2,722.50"],
-        "Action": ["Wait for Sweep", "Look for Buy", "Key Gravity", "Dynamic Support"]
-    })
-
-with plan_col2:
-    st.markdown("### 💵 RISK MANAGEMENT")
-    with st.container(border=True):
-        bal = st.number_input("Account Balance ($)", value=2000, step=100)
-        risk_label = st.select_slider("Risk Mode", options=["Safe (0.5%)", "Standard (1%)", "Aggressive (2%)"], value="Standard (1%)")
-        risk_map = {"Safe (0.5%)": 0.005, "Standard (1%)": 0.01, "Aggressive (2%)": 0.02}
-        max_loss = bal * risk_map[risk_label]
-        st.metric("MAX LOSS PER TRADE", f"${max_loss:.2f}", delta="- Risk Capital", delta_color="inverse")
-
-# --- 6. SIDEBAR: CONTROL CENTER ---
+# --- 6. SIDEBAR CONTROL ---
 with st.sidebar:
-    st.markdown("<h1 style='color:#00FF88; margin-bottom:0;'>PATRO AI</h1>", unsafe_allow_html=True)
-    st.caption("Institutional Intelligence v14.0")
+    st.markdown("<h1 style='color:#00FF88;'>PATRO AI</h1>", unsafe_allow_html=True)
     st.image("https://img.icons8.com/nolan/64/artificial-intelligence.png", width=80)
     
     st.success(f"MODE: {trend_status}")
-    st.markdown("---")
     
-    st.markdown("### ⚡ SIGNAL GENERATOR")
-    if st.button("🚀 GENERATE SIGNAL"):
-        show_signal_popup()
+    st.divider()
+    bal = st.number_input("Balance ($)", value=2000)
+    risk_pct = st.select_slider("Risk Mode", options=[0.5, 1.0, 2.0], value=1.0)
+    st.metric("MAX RISK", f"${bal * (risk_pct/100):.2f}")
     
-    st.markdown("---")
-    st.info("System linked to MetaTrader 5 Terminal. Ensure 'Algo Trading' is enabled.")
+    st.info("Scanner linked to Pepperstone/JustMarkets Live.")
+
+# --- 7. NEWS TICKER (BOTTOM) ---
+components.html("""
+<div style="background: #111; padding: 10px; border-top: 1px solid #333;">
+<script src="https://s3.tradingview.com/external-embedding/embed-widget-ticker-tape.js" async>
+{
+  "symbols": [
+    {"proName": "FOREXCOM:SPX500", "title": "S&P 500"},
+    {"proName": "FOREXCOM:NSXUSD", "title": "Nasdaq 100"},
+    {"proName": "FX_IDC:EURUSD", "title": "EUR/USD"},
+    {"proName": "OANDA:XAUUSD", "title": "Gold"},
+    {"proName": "BITSTAMP:BTCUSD", "title": "Bitcoin"}
+  ],
+  "colorTheme": "dark", "isTransparent": true, "displayMode": "adaptive"
+}
+</script>
+</div>""", height=100)
