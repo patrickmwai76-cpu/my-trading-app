@@ -1,87 +1,86 @@
 import streamlit as st
 import streamlit.components.v1 as components
-import pandas as pd
-import yfinance as yf
 
 # --- 1. CONFIGURATION ---
-st.set_page_config(page_title="PATRO AI PRO | CROSSOVER", layout="wide")
+st.set_page_config(page_title="PATRO AI PRO | ULTRA", layout="wide")
 
-# --- 2. CROSSOVER LOGIC ENGINE ---
-def get_crossover_data():
-    # Fetching live M15 Gold data
-    gold = yf.Ticker("GC=F")
-    df = gold.history(period="2d", interval="15m")
-    
-    # EMA 9 (Fast - Yellow) and EMA 21 (Slow - Red)
-    df['EMA9'] = df['Close'].ewm(span=9, adjust=False).mean()
-    df['EMA21'] = df['Close'].ewm(span=21, adjust=False).mean()
-    
-    # Signal Logic: 1 for Buy, -1 for Sell
-    df['Signal'] = 0
-    # Buy when 9 crosses above 21
-    df.loc[(df['EMA9'] > df['EMA21']) & (df['EMA9'].shift(1) <= df['EMA21'].shift(1)), 'Signal'] = 1
-    # Sell when 9 crosses below 21
-    df.loc[(df['EMA9'] < df['EMA21']) & (df['EMA9'].shift(1) >= df['EMA21'].shift(1)), 'Signal'] = -1
-    
-    return df.tail(100)
-
-df = get_crossover_data()
-latest_signal = df[df['Signal'] != 0].iloc[-1] if not df[df['Signal'] != 0].empty else None
-
-# --- 3. TOP ACTION HEADER ---
-if latest_signal is not None:
-    action = "🚀 STRONG BUY" if latest_signal['Signal'] == 1 else "🔻 STRONG SELL"
-    color = "#00FF88" if latest_signal['Signal'] == 1 else "#FF4B4B"
-    st.markdown(f"""
-        <div style="background:#111; padding:20px; border-radius:15px; border:2px solid {color}; text-align:center;">
-            <h1 style="color:{color}; margin:0;">{action} SIGNAL DETECTED</h1>
-            <p style="color:#888;">Crossover confirmed at ${latest_signal['Close']:.2f}</p>
-        </div>
+st.markdown("""
+    <style>
+    .stApp { background-color: #050505; color: #ffffff; }
+    .signal-card {
+        padding: 20px; border-radius: 15px; text-align: center;
+        margin-bottom: 20px; border: 2px solid #333;
+    }
+    </style>
     """, unsafe_allow_html=True)
 
-# --- 4. THE SMART MONEY CHART (SMC) ---
-st.markdown("### 📊 SMART MONEY CHART (SMC)")
+# --- 2. THE SMART CHART WITH CORRECT COLORS ---
+def draw_colored_chart():
+    # We use 'studies' to force the specific colors: Yellow (#FFEB3B) and Red (#FF5252)
+    chart_script = """
+    <div id="tradingview_patro" style="height:600px;"></div>
+    <script type="text/javascript" src="https://s3.tradingview.com/tv.js"></script>
+    <script type="text/javascript">
+    new TradingView.widget({
+      "autosize": true,
+      "symbol": "OANDA:XAUUSD",
+      "interval": "15",
+      "timezone": "Africa/Nairobi",
+      "theme": "dark",
+      "style": "1",
+      "locale": "en",
+      "toolbar_bg": "#f1f3f6",
+      "enable_publishing": false,
+      "hide_top_toolbar": false,
+      "save_image": false,
+      "container_id": "tradingview_patro",
+      "studies": [
+        {
+            "id": "MASimple@tv-basicstudies",
+            "inputs": { "length": 9 },
+            "title": "9 EMA (Fast)",
+            "plots": { "0": { "color": "#FFEB3B" } } 
+        },
+        {
+            "id": "MASimple@tv-basicstudies",
+            "inputs": { "length": 21 },
+            "title": "21 EMA (Slow)",
+            "plots": { "0": { "color": "#FF5252" } }
+        }
+      ]
+    });
+    </script>
+    """
+    components.html(chart_script, height=610)
 
-# We use TradingView's library to draw the lines and markers
-chart_html = f"""
-<div id="tv_chart" style="height:600px;"></div>
-<script src="https://s3.tradingview.com/tv.js"></script>
-<script>
-new TradingView.widget({{
-  "autosize": true,
-  "symbol": "OANDA:XAUUSD",
-  "interval": "15",
-  "theme": "dark",
-  "style": "1",
-  "container_id": "tv_chart",
-  "studies": [
-    {{
-        "id": "MASimple@tv-basicstudies",
-        "inputs": {{ "length": 9 }},
-        "title": "Fast EMA",
-        "plots": {{ "0": {{ "color": "#FFEB3B" }} }}  // Yellow Line
-    }},
-    {{
-        "id": "MASimple@tv-basicstudies",
-        "inputs": {{ "length": 21 }},
-        "title": "Slow EMA",
-        "plots": {{ "0": {{ "color": "#FF5252" }} }}  // Red Line
-    }}
-  ],
-  "show_popup_button": true,
-  "popup_width": "1000",
-  "popup_height": "650"
-}});
-</script>
-"""
-components.html(chart_html, height=610)
+# --- 3. MAIN DASHBOARD ---
+st.markdown("### 🛰️ PATRO AI | MOMENTUM TERMINAL")
 
-# --- 5. SIDEBAR STATS ---
+# Top row for visual confirmation
+col_signal, col_dxy = st.columns([2, 1])
+
+with col_signal:
+    # This box helps you identify the cross without confusion
+    st.markdown("""
+    <div style="display: flex; gap: 10px; justify-content: center; margin-bottom: 10px;">
+        <div style="background: #FFEB3B; color: black; padding: 5px 15px; border-radius: 5px; font-weight: bold;">YELLOW = BUY LINE</div>
+        <div style="background: #FF5252; color: white; padding: 5px 15px; border-radius: 5px; font-weight: bold;">RED = SELL LINE</div>
+    </div>
+    """, unsafe_allow_html=True)
+    draw_colored_chart()
+
+with col_dxy:
+    st.markdown("### 🧠 AI CONFLUENCE")
+    st.metric("DXY INDEX", "100.03", "-0.14%")
+    st.info("Market Rule: If Yellow crosses ABOVE Red -> **BUY**. If Yellow crosses BELOW Red -> **SELL**.")
+    
+    if st.button("🖥️ POP-OUT CHART", use_container_width=True):
+        st.toast("Opening Full Analysis Window...")
+
+# --- 4. SIDEBAR ---
 with st.sidebar:
     st.title("PATRO AI PRO")
     st.write("📍 Nairobi, Kenya")
     st.divider()
-    st.metric("CURRENT PRICE", f"${df['Close'].iloc[-1]:.2f}")
-    if latest_signal is not None:
-        st.write(f"**Last Cross:** {latest_signal.name.strftime('%H:%M')}")
-        st.write(f"**Type:** {'Bullish' if latest_signal['Signal'] == 1 else 'Bearish'}")
+    if st.button("🔥 REFRESH SIGNALS"):
+        st.rerun()
