@@ -2,26 +2,26 @@ import streamlit as st
 import streamlit.components.v1 as components
 import pandas as pd
 import yfinance as yf
-from gtts import gTTS  # Browser-friendly Voice Engine
+from gtts import gTTS
 import io
 import base64
 
 # --- 1. CONFIGURATION ---
 st.set_page_config(page_title="PATRO AI PRO | CROSSOVER", layout="wide")
 
-# --- 2. BROWSER AUDIO ENGINE ---
+# --- 2. FIXED BROWSER AUDIO ENGINE ---
 def speak_in_browser(text_to_speak):
-    """Converts text to an mp3 object and force-plays it through the browser browser using base64."""
+    """Converts text to an mp3 object and injects a clean, safe HTML5 player."""
     if text_to_speak:
         tts = gTTS(text=text_to_speak, lang='en', tld='com')
         mp3_fp = io.BytesIO()
         tts.write_to_fp(mp3_fp)
         mp3_fp.seek(0)
         
-        # Encode audio to display inside the page cleanly
         b64 = base64.b64encode(mp3_fp.read()).decode()
+        # Clean, standard HTML5 audio string that browsers accept easily
         audio_html = f"""
-            <audio autoplay class="stAudio" style="display:none;">
+            <audio autoplay style="display:none;">
                 <source src="data:audio/mp3;base64,{b64}" type="audio/mp3">
             </audio>
         """
@@ -70,54 +70,48 @@ new TradingView.widget({{
   "style": "1",
   "container_id": "tv_chart",
   "studies": [
-    {{
-        "id": "MASimple@tv-basicstudies",
-        "inputs": {{ "length": 9 }},
-        "title": "Fast EMA",
-        "plots": {{ "0": {{ "color": "#FFEB3B" }} }}
-    }},
-    {{
-        "id": "MASimple@tv-basicstudies",
-        "inputs": {{ "length": 21 }},
-        "title": "Slow EMA",
-        "plots": {{ "0": {{ "color": "#FF5252" }} }}
-    }}
+    {{ "id": "MASimple@tv-basicstudies", "inputs": {{ "length": 9 }}, "title": "Fast EMA", "plots": {{ "0": {{ "color": "#FFEB3B" }} }} }},
+    {{ "id": "MASimple@tv-basicstudies", "inputs": {{ "length": 21 }}, "title": "Slow EMA", "plots": {{ "0": {{ "color": "#FF5252" }} }} }}
   ]
 }});
 </script>
 """
 components.html(chart_html, height=610)
 
-# --- 6. SIDEBAR CHAT INTERFACE & STATS ---
+# --- 6. SIDEBAR CHAT INTERFACE ---
 with st.sidebar:
     st.title("PATRO AI PRO")
     st.write("📍 Nairobi, Kenya")
     st.divider()
     
-    # Live Assistant Chat Box
     st.subheader("💬 Ask Your AI Assistant")
+    
+    # 🌟 NEW: The Unlock Button for Mobile Devices
+    if st.button("🔊 Click to Activate Voice Partner"):
+        speak_in_browser("Voice connection established. Type your question below, Patro.")
+        st.success("Voice Engine Active!")
+
     user_message = st.text_input("Type your question here, Patro:", key="chat_input")
     
     if user_message:
         reply_text = ""
         msg = user_message.lower()
         
-        # Friendly rule handling responses based on your system rules
         if "status" in msg or "signal" in msg:
             if latest_signal is not None:
                 current_trend = "Bullish and screaming Buy" if latest_signal['Signal'] == 1 else "Bearish and showing a clean Sell setup"
-                reply_text = f"Hey Patro! Looking at the M15 chart right now, the momentum is {current_trend} at {latest_signal['Close']:.2f}. Keep an eye on those lines!"
+                reply_text = f"Hey Patro! Looking at the M15 chart right now, the momentum is {current_trend} at {latest_signal['Close']:.2f}."
             else:
-                reply_text = "Hey my friend! The market lines are running completely sideways right now. No major crossover detected yet. Keep cool and wait for the breakout."
+                reply_text = "Hey my friend! The market lines are running completely sideways right now. No major crossover detected yet."
         elif "price" in msg or "gold" in msg:
-            reply_text = f"Gold is sitting right at {df['Close'].iloc[-1]:.2f} dollars per ounce right now. It is tracking perfectly on our setup."
+            reply_text = f"Gold is sitting right at {df['Close'].iloc[-1]:.2f} dollars per ounce right now."
         elif "hello" in msg or "hi" in msg:
-            reply_text = "Hello Patro! I am locked and loaded. Ready to track these gold signals with you today. What are we looking at?"
+            reply_text = "Hello Patro! I am locked and loaded. Ready to track these gold signals with you today."
         else:
-            reply_text = "That is an interesting spot on the chart, my friend! Let's watch how the market handles this level over the next few candles."
+            reply_text = "That is an interesting spot on the chart, my friend! Let's watch how the market handles this level."
             
         st.write(f"🤖 **Patro AI:** {reply_text}")
-        speak_in_browser(reply_text)  # Triggers aloud audio
+        speak_in_browser(reply_text)
         
     st.divider()
     st.metric("CURRENT PRICE", f"${df['Close'].iloc[-1]:.2f}")
