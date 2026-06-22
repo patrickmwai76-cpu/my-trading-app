@@ -7,11 +7,11 @@ import io
 import base64
 
 # --- 1. CONFIGURATION ---
-st.set_page_config(page_title="PATRO AI PRO | PROFESSIONAL", layout="wide")
+st.set_page_config(page_title="PATRO AI PRO | SMC", layout="wide")
 
-# --- 2. BROWSER AUDIO ENGINE ---
+# --- 2. AUDIO GENERATION ENGINE ---
 def speak_in_browser(text_to_speak):
-    """Converts professional analytical text to high-quality speech played through the browser."""
+    """Converts trade signals to explicit verbal instructions via base64 injection."""
     if text_to_speak:
         try:
             tts = gTTS(text=text_to_speak, lang='en', tld='com')
@@ -28,25 +28,21 @@ def speak_in_browser(text_to_speak):
         except Exception:
             pass
 
-# --- 3. PROFESSIONAL ANALYTICS ENGINE ---
+# --- 3. LIQUIDITY & CROSSOVER CALCULATIONS ---
 def get_market_analysis():
-    # Fetch live M15 Gold data
+    # Pulling M15 Gold Data
     gold = yf.Ticker("GC=F")
     df = gold.history(period="3d", interval="15m")
     
-    # Core Mathematical Indicators
+    # 9/21 EMA Crossover Logic
     df['EMA9'] = df['Close'].ewm(span=9, adjust=False).mean()
     df['EMA21'] = df['Close'].ewm(span=21, adjust=False).mean()
     
-    # Calculate Average True Range (ATR) for institutional risk boundaries
-    high_low = df['High'] - df['Low']
-    high_close = abs(df['High'] - df['Close'].shift())
-    low_close = abs(df['Low'] - df['Close'].shift())
-    ranges = pd.concat([high_low, high_close, low_close], axis=1)
-    true_range = ranges.max(axis=1)
-    df['ATR'] = true_range.rolling(14).mean()
+    # Automated Liquidity Pool Tracking (Looking back 20 candles for key extremes)
+    df['Recent_High'] = df['High'].shift(1).rolling(window=20).max()
+    df['Recent_Low'] = df['Low'].shift(1).rolling(window=20).min()
     
-    # Dynamic Trend Execution Signal
+    # Standard Signal Indicators
     df['Signal'] = 0
     df.loc[(df['EMA9'] > df['EMA21']) & (df['EMA9'].shift(1) <= df['EMA21'].shift(1)), 'Signal'] = 1
     df.loc[(df['EMA9'] < df['EMA21']) & (df['EMA9'].shift(1) >= df['EMA21'].shift(1)), 'Signal'] = -1
@@ -55,20 +51,40 @@ def get_market_analysis():
 
 df_full = get_market_analysis()
 df = df_full.tail(100)
+latest_row = df.iloc[-1]
 latest_signal = df[df['Signal'] != 0].iloc[-1] if not df[df['Signal'] != 0].empty else None
 
-# --- 4. TOP ACTION EXECUTIVE HEADER ---
-if latest_signal is not None:
+# --- 4. LIQUIDITY SWEEP DETECTOR ---
+# Check if current price swept past recent structural extremes before returning
+liquidity_alert = "Neutral"
+voice_alert = ""
+
+if latest_row['High'] > latest_row['Recent_High'] and latest_row['Close'] < latest_row['Recent_High']:
+    liquidity_alert = "🔴 BEARISH LIQUIDITY SWEEP (Buy Orders Trapped)"
+    voice_alert = "Patro, bearish liquidity sweep confirmed. High volume buyers are trapped. Prepare for a sell execution."
+elif latest_row['Low'] < latest_row['Recent_Low'] and latest_row['Close'] > latest_row['Recent_Low']:
+    liquidity_alert = "🟢 BULLISH LIQUIDITY SWEEP (Sell Orders Trapped)"
+    voice_alert = "Patro, bullish liquidity sweep confirmed. Sell orders are trapped at the lows. Prepare for a buy entry."
+
+# --- 5. TOP EXECUTIVE ACTION HEADER ---
+if liquidity_alert != "Neutral":
+    st.markdown(f"""
+        <div style="background:#111; padding:25px; border-radius:15px; border:3px solid #FFC107; text-align:center;">
+            <h1 style="color:#FFC107; margin:0;">⚠️ MARKET LIQUIDITY ALERT</h1>
+            <p style="color:#FFF; font-size:18px; margin-top:10px; font-weight:bold;">{liquidity_alert}</p>
+        </div>
+    """, unsafe_allow_html=True)
+elif latest_signal is not None:
     action = "🚀 STRONG BUY" if latest_signal['Signal'] == 1 else "🔻 STRONG SELL"
     color = "#00FF88" if latest_signal['Signal'] == 1 else "#FF4B4B"
     st.markdown(f"""
         <div style="background:#111; padding:20px; border-radius:15px; border:2px solid {color}; text-align:center;">
-            <h1 style="color:{color}; margin:0;">{action} SYSTEM ALERT</h1>
-            <p style="color:#888; font-weight: bold; margin-top: 5px;">M15 Structure Confirmed at ${latest_signal['Close']:.2f}</p>
+            <h1 style="color:{color}; margin:0;">{action} SIGNAL ACTIVE</h1>
+            <p style="color:#888;">Crossover confirmed at ${latest_signal['Close']:.2f}</p>
         </div>
     """, unsafe_allow_html=True)
 
-# --- 5. THE SMART MONEY CHART (SMC) ---
+# --- 6. SMART MONEY CHART (SMC) ---
 st.markdown("### 📊 SMART MONEY CHART (SMC)")
 
 chart_html = """
@@ -90,44 +106,25 @@ new TradingView.widget({
 </script>"""
 components.html(chart_html, height=560)
 
-# --- 6. EXECUTIVE ASSISTANT SIDEBAR PANEL ---
+# --- 7. SIDEBAR MANAGEMENT PANEL ---
 with st.sidebar:
     st.title("PATRO AI PRO")
-    st.caption("Professional Execution Interface")
+    st.caption("SMC Liquidity Scanner")
     st.divider()
     
-    # Real-Time Price Metrics
-    current_price = df['Close'].iloc[-1]
-    st.metric("LIVE XAUUSD PRICE", f"${current_price:.2f}")
-    
+    # Audio Activation Check
+    if st.button("🔊 Activate Live Audio Channel"):
+        st.success("Voice Stream Connected.")
+        speak_in_browser("System ready. Analyzing liquidity pools.")
+        
     st.divider()
-    st.subheader("📋 Executive Assistant Briefing")
+    st.metric("LIVE PRICE", f"${latest_row['Close']:.2f}")
     
-    # Audio Initialization Button to comply with browser playback policies
-    if st.button("🔊 Initialize Professional Audio Channel"):
-        init_brief = "Audio alignment complete. Stand by for metric analysis."
-        st.success("Audio Stream Operational.")
-        speak_in_browser(init_brief)
-        
-    # Standard Request Dropdown to eliminate input lag and provide immediate structural analytics
-    report_type = st.selectbox("Request Professional Briefing:", [
-        "Select Report Type", 
-        "Comprehensive Market Briefing", 
-        "Risk Assessment & Trade Boundaries"
-    ])
-    
-    if report_type == "Comprehensive Market Briefing":
-        if latest_signal is not None:
-            direction = "Bullish expansion" if latest_signal['Signal'] == 1 else "Bearish expansion"
-            briefing_text = f"Market structure on the fifteen-minute chart indicates a verified {direction}. Crossover confirmation was achieved at {latest_signal['Close']:.2f}. Current price action is tracking at {current_price:.2f}. Prioritize execution alignment with higher timeframe order blocks."
-        else:
-            briefing_text = f"Gold is currently demonstrating tight consolidation around {current_price:.2f}. System suggests monitoring liquidity ranges before committing capital."
-        
-        st.info(briefing_text)
-        speak_in_browser(briefing_text)
-        
-    elif report_type == "Risk Assessment & Trade Boundaries":
-        current_atr = df['ATR'].iloc[-1]
-        risk_text = f"Current market volatility, measured by the fourteen period ATR, stands at {current_atr:.2f} dollars. For optimum risk management, ensure stop losses are positioned safely behind structural invalidation zones."
-        st.warning(risk_text)
-        speak_in_browser(risk_text)
+    # Broadcast Area
+    st.subheader("📢 Live Execution Briefing")
+    if liquidity_alert != "Neutral":
+        st.error(liquidity_alert)
+        if voice_alert:
+            speak_in_browser(voice_alert)
+    else:
+        st.info("Tracking market structure. No structural trap detected in this block.")
